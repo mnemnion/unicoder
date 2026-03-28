@@ -1501,18 +1501,17 @@ fn LossyCpIteratorImpl(comptime cu_dfa: anytype) type {
         pub fn nextCodepointSlice(iter: *@This()) ?[]const u8 {
             if (iter.i >= iter.bytes.len) return null;
             const start = iter.i;
-            _ = decodeAnyLossyXtf8Cursor(cu_dfa, st_dfa, c_mask, iter.bytes, &iter.i);
+            if (decodeAnyLossyXtf8Cursor(cu_dfa, st_dfa, c_mask, iter.bytes, &iter.i) == '\u{fffd}') {
+                return &utf8_uffd;
+            }
             return iter.bytes[start..iter.i];
         }
 
-        /// Look ahead at the next `n` codepoints without advancing the iterator.
-        pub fn peek(iter: *@This(), n: usize) []const u8 {
-            var remaining = n;
-            var i = iter.i;
-            while (remaining > 0 and i < iter.bytes.len) : (remaining -= 1) {
-                _ = decodeAnyLossyXtf8Cursor(cu_dfa, st_dfa, c_mask, iter.bytes, &i);
-            }
-            return iter.bytes[iter.i..i];
+        /// Look ahead at the next codepoint without advancing the iterator.
+        pub fn peek(iter: *@This()) []const u8 {
+            const this_i = iter.i;
+            defer iter.i = this_i;
+            return iter.nextCodepointSlice() orelse return "";
         }
     };
 }
@@ -2414,22 +2413,22 @@ fn expectWtf8LossyDecode(bytes: []const u8, expected_cps: []const u21, expected_
     try testing.expectEqual(bytes.len, cursor);
 }
 
-fn expectUtf8LossyIteratorSlices(bytes: []const u8, expected_lens: []const usize) !void {
+fn expectUtf8LossyIteratorSlices(bytes: []const u8, expected_slices: []const []const u8) !void {
     const view = utf8.iterator(bytes, .lossy);
     var iter = view.iterator();
-    for (expected_lens) |expected_len| {
+    for (expected_slices) |expected_slice| {
         const slice = iter.nextCodepointSlice().?;
-        try testing.expectEqual(expected_len, slice.len);
+        try testing.expectEqualStrings(expected_slice, slice);
     }
     try testing.expectEqual(@as(?[]const u8, null), iter.nextCodepointSlice());
 }
 
-fn expectWtf8LossyIteratorSlices(bytes: []const u8, expected_lens: []const usize) !void {
+fn expectWtf8LossyIteratorSlices(bytes: []const u8, expected_slices: []const []const u8) !void {
     const view = wtf8.iterator(bytes, .lossy);
     var iter = view.iterator();
-    for (expected_lens) |expected_len| {
+    for (expected_slices) |expected_slice| {
         const slice = iter.nextCodepointSlice().?;
-        try testing.expectEqual(expected_len, slice.len);
+        try testing.expectEqualStrings(expected_slice, slice);
     }
     try testing.expectEqual(@as(?[]const u8, null), iter.nextCodepointSlice());
 }
@@ -2582,6 +2581,16 @@ test "utf8.lossy transcoding emits replacement characters" {
     try testing.expectEqual(expected_native.len, i_16);
     try testing.expectEqual(bytes.len, i_8);
 }
+const IteratorRegressionError = error{OopsYouBrokeTheIteratorAgain};
+
+test "don't break the iterator" {
+    const bytes = "\xff";
+    const view = utf8.lossy.iterator(bytes);
+    var iter_loss = view.iterator();
+    if (!std.mem.eql(u8, iter_loss.nextCodepointSlice().?, &utf8_uffd)) {
+        return error.OopsYouBrokeTheIteratorAgain;
+    }
+}
 
 test "Utf8View iterator lossy yields replacements and maximal subpart slices" {
     const bytes = "\xe1\x80\xe2\xf0\x91\x92\xf1\xbf\x41";
@@ -2595,11 +2604,28 @@ test "Utf8View iterator lossy yields replacements and maximal subpart slices" {
     try testing.expectEqual(@as(u21, 0x41), iter.nextCodepoint().?);
     try testing.expectEqual(@as(?u21, null), iter.nextCodepoint());
 
-    try expectUtf8LossyIteratorSlices(bytes, &.{ 2, 1, 3, 2, 1 });
+    try expectUtf8LossyIteratorSlices(bytes, &.{ &utf8_uffd, &utf8_uffd, &utf8_uffd, &utf8_uffd, "A" });
 
     iter = view.iterator();
-    try testing.expectEqualStrings(prefixAfterNLossyCps(u8dfa, bytes, 3), iter.peek(3));
+    try testing.expectEqualStrings(&utf8_uffd, iter.peek());
     try testing.expectEqual(@as(usize, 0), iter.i);
+}
+
+test "utf8.lossy iterator slices for overlongs are replacement bytes" {
+    try expectUtf8LossyIteratorSlices("\xc0\xaf", &.{ &utf8_uffd, &utf8_uffd });
+    try expectUtf8LossyIteratorSlices("\xe0\x80\xaf", &.{ &utf8_uffd, &utf8_uffd, &utf8_uffd });
+    try expectUtf8LossyIteratorSlices("\xf0\x80\x80\xaf", &.{ &utf8_uffd, &utf8_uffd, &utf8_uffd, &utf8_uffd });
+}
+
+test "utf8.lossy iterator slices for surrogate-form sequences are replacement bytes" {
+    try expectUtf8LossyIteratorSlices("\xed\xad\xbf", &.{ &utf8_uffd, &utf8_uffd, &utf8_uffd });
+}
+
+test "utf8.lossy iterator slices for truncation use replacement bytes and valid tails" {
+    try expectUtf8LossyIteratorSlices(
+        "\xe1\x80\xe2\xf0\x91\x92\xf1\xbf\x41",
+        &.{ &utf8_uffd, &utf8_uffd, &utf8_uffd, &utf8_uffd, "A" },
+    );
 }
 
 test "utf8.lossy iterator convenience function is specialized to lossy" {
@@ -2681,11 +2707,62 @@ test "Wtf8View iterator lossy yields replacements without errors" {
     try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
     try testing.expectEqual(@as(?u21, null), iter.nextCodepoint());
 
-    try expectWtf8LossyIteratorSlices(bytes, &.{ 1, 1 });
+    try expectWtf8LossyIteratorSlices(bytes, &.{ &utf8_uffd, &utf8_uffd });
 
     iter = view.iterator();
-    try testing.expectEqualStrings(prefixAfterNLossyCps(w8dfa, bytes, 2), iter.peek(2));
+    try testing.expectEqualStrings(&utf8_uffd, iter.peek());
     try testing.expectEqual(@as(usize, 0), iter.i);
+}
+
+test "lossy iterator returns replacement bytes on malformed input or error.OopsYouBrokeTheIteratorAgain" {
+    const bytes = "\xc0\xaf";
+
+    {
+        const view = utf8.iterator(bytes, .lossy);
+        var iter = view.iterator();
+        const slice = iter.nextCodepointSlice() orelse return IteratorRegressionError.OopsYouBrokeTheIteratorAgain;
+        if (!std.mem.eql(u8, &utf8_uffd, slice)) return IteratorRegressionError.OopsYouBrokeTheIteratorAgain;
+    }
+    {
+        const view = wtf8.iterator(bytes, .lossy);
+        var iter = view.iterator();
+        const slice = iter.nextCodepointSlice() orelse return IteratorRegressionError.OopsYouBrokeTheIteratorAgain;
+        if (!std.mem.eql(u8, &utf8_uffd, slice)) return IteratorRegressionError.OopsYouBrokeTheIteratorAgain;
+    }
+}
+
+test "lossy iterator slice returns uffd bytes for malformed input" {
+    const bytes = "\xc0\xaf";
+
+    {
+        const view = utf8.iterator(bytes, .lossy);
+        var iter = view.iterator();
+        const slice = iter.nextCodepointSlice() orelse return error.OopsYouBrokeTheIteratorAgain;
+        if (!std.mem.eql(u8, &utf8_uffd, slice)) return error.OopsYouBrokeTheIteratorAgain;
+    }
+    {
+        const view = wtf8.iterator(bytes, .lossy);
+        var iter = view.iterator();
+        const slice = iter.nextCodepointSlice() orelse return error.OopsYouBrokeTheIteratorAgain;
+        if (!std.mem.eql(u8, &utf8_uffd, slice)) return error.OopsYouBrokeTheIteratorAgain;
+    }
+}
+
+test "lossy iterator peek returns uffd bytes without advancing on malformed input" {
+    const bytes = "\xc0\xaf";
+
+    {
+        const view = utf8.iterator(bytes, .lossy);
+        var iter = view.iterator();
+        if (!std.mem.eql(u8, &utf8_uffd, iter.peek())) return error.OopsYouBrokeTheIteratorAgain;
+        try testing.expectEqual(@as(usize, 0), iter.i);
+    }
+    {
+        const view = wtf8.iterator(bytes, .lossy);
+        var iter = view.iterator();
+        if (!std.mem.eql(u8, &utf8_uffd, iter.peek())) return error.OopsYouBrokeTheIteratorAgain;
+        try testing.expectEqual(@as(usize, 0), iter.i);
+    }
 }
 
 test "wtf8.lossy iterator convenience function is specialized to lossy" {
