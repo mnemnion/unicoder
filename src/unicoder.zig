@@ -904,14 +904,6 @@ const wtf8_valid_to_wtf16 = struct {
 };
 
 fn Xf8View(comptime xf8_kind: Xf8Kind) fn (comptime ErrorStrategyKind) type {
-    return struct {
-        fn specialize(comptime strategy: ErrorStrategyKind) type {
-            return Xf8ViewImpl(xf8_kind, strategy);
-        }
-    }.specialize;
-}
-
-fn Xf8ViewImpl(comptime xf8_kind: Xf8Kind, comptime strategy: ErrorStrategyKind) type {
     const byte_dfa = switch (xf8_kind) {
         .utf8 => u8dfa,
         .wtf8 => w8dfa,
@@ -922,25 +914,21 @@ fn Xf8ViewImpl(comptime xf8_kind: Xf8Kind, comptime strategy: ErrorStrategyKind)
     };
 
     return struct {
-        bytes: []const u8,
-
-        /// Wrap a byte slice as a view without validating it.
-        pub fn init(slice: []const u8) @This() {
-            return .{ .bytes = slice };
+        fn view(comptime strategy: ErrorStrategyKind) type {
+            return Xf8ViewImpl(strategy, byte_dfa, invalid_error);
         }
+    }.view;
+}
 
-        pub fn Iterator() type {
-            return switch (strategy) {
-                .exact => ExactCpIteratorImpl(byte_dfa, invalid_error),
-                .lossy => LossyCpIteratorImpl(byte_dfa),
-                .assume_valid => AssumeValidCpIteratorImpl(byte_dfa, c_mask),
-            };
-        }
-
-        /// Create an iterator specialized for the selected error strategy.
-        pub fn iterator(view: @This()) Iterator() {
-            return .{ .bytes = view.bytes };
-        }
+fn Xf8ViewImpl(
+    comptime strategy: ErrorStrategyKind,
+    comptime byte_dfa: anytype,
+    comptime invalid_error: anytype,
+) type {
+    return switch (strategy) {
+        .exact => ExactCpIteratorImpl(byte_dfa, invalid_error),
+        .lossy => LossyCpIteratorImpl(byte_dfa),
+        .assume_valid => AssumeValidCpIteratorImpl(byte_dfa, c_mask),
     };
 }
 
@@ -1453,6 +1441,10 @@ fn ExactCpIteratorImpl(comptime cu_dfa: anytype, comptime invalid_error: anytype
         bytes: []const u8,
         i: usize = 0,
 
+        pub fn init(slice: []const u8) @This() {
+            return .{ .bytes = slice };
+        }
+
         /// Return the next codepoint, or `null` at end of input.
         pub fn nextCodepoint(iter: *@This()) @TypeOf(invalid_error)!?u21 {
             if (iter.i >= iter.bytes.len) return null;
@@ -1491,6 +1483,10 @@ fn LossyCpIteratorImpl(comptime cu_dfa: anytype) type {
         bytes: []const u8,
         i: usize = 0,
 
+        pub fn init(slice: []const u8) @This() {
+            return .{ .bytes = slice };
+        }
+
         /// Return the next codepoint, substituting U+FFFD for malformed input.
         pub fn nextCodepoint(iter: *@This()) ?u21 {
             if (iter.i >= iter.bytes.len) return null;
@@ -1520,6 +1516,10 @@ fn AssumeValidCpIteratorImpl(comptime cu_dfa: anytype, comptime class_mask: anyt
     return struct {
         bytes: []const u8,
         i: usize = 0,
+
+        pub fn init(slice: []const u8) @This() {
+            return .{ .bytes = slice };
+        }
 
         /// Return the next codepoint, assuming the remaining input is valid.
         pub fn nextCodepoint(iter: *@This()) ?u21 {
@@ -2328,8 +2328,7 @@ test "source namespaces expose utf16 transcoding entry points" {
 }
 
 fn testUtf8ViewNextCp(slice: []const u8) !void {
-    const view = utf8.iterator(slice, .exact);
-    var iter = view.iterator();
+    var iter = utf8.iterator(slice, .exact);
     var cursor: usize = 0;
     while (try iter.nextCodepoint()) |cp| {
         const expected = try utf8.decodeCursor(slice, &cursor);
@@ -2339,8 +2338,7 @@ fn testUtf8ViewNextCp(slice: []const u8) !void {
 }
 
 fn testUtf8ViewNextCpSlice(slice: []const u8) !void {
-    const view = utf8.Utf8View(.exact).init(slice);
-    var iter = view.iterator();
+    var iter = utf8.Utf8View(.exact).init(slice);
     var cursor: usize = 0;
     while (try iter.nextCodepointSlice()) |cp_slice| {
         const start = cursor;
@@ -2351,8 +2349,7 @@ fn testUtf8ViewNextCpSlice(slice: []const u8) !void {
 }
 
 fn testWtf8ViewNextCp(slice: []const u8) !void {
-    const view = wtf8.iterator(slice, .exact);
-    var iter = view.iterator();
+    var iter = wtf8.iterator(slice, .exact);
     var cursor: usize = 0;
     while (try iter.nextCodepoint()) |cp| {
         const expected = try wtf8.decodeCursor(slice, &cursor);
@@ -2362,8 +2359,7 @@ fn testWtf8ViewNextCp(slice: []const u8) !void {
 }
 
 fn testWtf8ViewNextCpSlice(slice: []const u8) !void {
-    const view = wtf8.Wtf8View(.exact).init(slice);
-    var iter = view.iterator();
+    var iter = wtf8.Wtf8View(.exact).init(slice);
     var cursor: usize = 0;
     while (try iter.nextCodepointSlice()) |cp_slice| {
         const start = cursor;
@@ -2414,8 +2410,7 @@ fn expectWtf8LossyDecode(bytes: []const u8, expected_cps: []const u21, expected_
 }
 
 fn expectUtf8LossyIteratorSlices(bytes: []const u8, expected_slices: []const []const u8) !void {
-    const view = utf8.iterator(bytes, .lossy);
-    var iter = view.iterator();
+    var iter = utf8.iterator(bytes, .lossy);
     for (expected_slices) |expected_slice| {
         const slice = iter.nextCodepointSlice().?;
         try testing.expectEqualStrings(expected_slice, slice);
@@ -2424,8 +2419,7 @@ fn expectUtf8LossyIteratorSlices(bytes: []const u8, expected_slices: []const []c
 }
 
 fn expectWtf8LossyIteratorSlices(bytes: []const u8, expected_slices: []const []const u8) !void {
-    const view = wtf8.iterator(bytes, .lossy);
-    var iter = view.iterator();
+    var iter = wtf8.iterator(bytes, .lossy);
     for (expected_slices) |expected_slice| {
         const slice = iter.nextCodepointSlice().?;
         try testing.expectEqualStrings(expected_slice, slice);
@@ -2448,16 +2442,14 @@ test "Utf8View iterator exact nextCodepointSlice matches input slices" {
 }
 
 test "Utf8View iterator exact peek returns prefix without advancing" {
-    const view = utf8.Utf8View(.exact).init(emotes);
-    var iter = view.iterator();
+    var iter = utf8.Utf8View(.exact).init(emotes);
     const expected = try prefixAfterNCps(emotes, 3);
     try testing.expectEqualStrings(expected, try iter.peek(3));
     try testing.expectEqual(@as(usize, 0), iter.i);
 }
 
 test "Utf8View iterator exact reports end of input" {
-    const view = utf8.Utf8View(.exact).init(ascii);
-    var iter = view.iterator();
+    var iter = utf8.Utf8View(.exact).init(ascii);
     while (try iter.nextCodepoint()) |_| {}
     try testing.expectEqual(@as(?u21, null), try iter.nextCodepoint());
     try testing.expectEqual(@as(?[]const u8, null), try iter.nextCodepointSlice());
@@ -2468,26 +2460,22 @@ test "Utf8View iterator exact reports malformed input" {
     const truncated = "\xf0\x9f\x92";
 
     {
-        const view = utf8.Utf8View(.exact).init(invalid);
-        var iter = view.iterator();
+        var iter = utf8.Utf8View(.exact).init(invalid);
         try testing.expectEqual(@as(u21, 'a'), (try iter.nextCodepoint()).?);
         try testing.expectError(error.InvalidUtf8, iter.nextCodepoint());
     }
     {
-        const view = utf8.Utf8View(.exact).init(invalid);
-        var iter = view.iterator();
+        var iter = utf8.Utf8View(.exact).init(invalid);
         _ = try iter.nextCodepointSlice();
         try testing.expectError(error.InvalidUtf8, iter.nextCodepointSlice());
     }
     {
-        const view = utf8.Utf8View(.exact).init(invalid);
-        var iter = view.iterator();
+        var iter = utf8.Utf8View(.exact).init(invalid);
         try testing.expectError(error.InvalidUtf8, iter.peek(3));
         try testing.expectEqual(@as(usize, 0), iter.i);
     }
     {
-        const view = utf8.Utf8View(.exact).init(truncated);
-        var iter = view.iterator();
+        var iter = utf8.Utf8View(.exact).init(truncated);
         try testing.expectError(error.InvalidUtf8, iter.nextCodepoint());
     }
 }
@@ -2508,18 +2496,17 @@ test "Wtf8View iterator exact nextCodepointSlice matches input slices" {
 
 test "Wtf8View iterator exact reports malformed input as InvalidWtf8" {
     const invalid = "\xf0\x28\x8c\xbc";
-    const view = wtf8.Wtf8View(.exact).init(invalid);
 
     {
-        var iter = view.iterator();
+        var iter = wtf8.Wtf8View(.exact).init(invalid);
         try testing.expectError(error.InvalidWtf8, iter.nextCodepoint());
     }
     {
-        var iter = view.iterator();
+        var iter = wtf8.Wtf8View(.exact).init(invalid);
         try testing.expectError(error.InvalidWtf8, iter.nextCodepointSlice());
     }
     {
-        var iter = view.iterator();
+        var iter = wtf8.Wtf8View(.exact).init(invalid);
         try testing.expectError(error.InvalidWtf8, iter.peek(1));
         try testing.expectEqual(@as(usize, 0), iter.i);
     }
@@ -2585,8 +2572,7 @@ const IteratorRegressionError = error{OopsYouBrokeTheIteratorAgain};
 
 test "don't break the iterator" {
     const bytes = "\xff";
-    const view = utf8.lossy.iterator(bytes);
-    var iter_loss = view.iterator();
+    var iter_loss = utf8.lossy.iterator(bytes);
     if (!std.mem.eql(u8, iter_loss.nextCodepointSlice().?, &utf8_uffd)) {
         return error.OopsYouBrokeTheIteratorAgain;
     }
@@ -2594,8 +2580,7 @@ test "don't break the iterator" {
 
 test "Utf8View iterator lossy yields replacements and maximal subpart slices" {
     const bytes = "\xe1\x80\xe2\xf0\x91\x92\xf1\xbf\x41";
-    const view = utf8.iterator(bytes, .lossy);
-    var iter = view.iterator();
+    var iter = utf8.iterator(bytes, .lossy);
 
     try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
     try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
@@ -2606,7 +2591,7 @@ test "Utf8View iterator lossy yields replacements and maximal subpart slices" {
 
     try expectUtf8LossyIteratorSlices(bytes, &.{ &utf8_uffd, &utf8_uffd, &utf8_uffd, &utf8_uffd, "A" });
 
-    iter = view.iterator();
+    iter = utf8.iterator(bytes, .lossy);
     try testing.expectEqualStrings(&utf8_uffd, iter.peek());
     try testing.expectEqual(@as(usize, 0), iter.i);
 }
@@ -2630,8 +2615,7 @@ test "utf8.lossy iterator slices for truncation use replacement bytes and valid 
 
 test "utf8.lossy iterator convenience function is specialized to lossy" {
     const bytes = "\xc0\xafA";
-    const view = utf8.lossy.iterator(bytes);
-    var iter = view.iterator();
+    var iter = utf8.lossy.iterator(bytes);
     try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
     try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
     try testing.expectEqual(@as(u21, 'A'), iter.nextCodepoint().?);
@@ -2700,8 +2684,7 @@ test "wtf8.assume_valid validate matches exact validation" {
 
 test "Wtf8View iterator lossy yields replacements without errors" {
     const bytes = "\xc0\xaf";
-    const view = wtf8.iterator(bytes, .lossy);
-    var iter = view.iterator();
+    var iter = wtf8.iterator(bytes, .lossy);
 
     try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
     try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
@@ -2709,7 +2692,7 @@ test "Wtf8View iterator lossy yields replacements without errors" {
 
     try expectWtf8LossyIteratorSlices(bytes, &.{ &utf8_uffd, &utf8_uffd });
 
-    iter = view.iterator();
+    iter = wtf8.iterator(bytes, .lossy);
     try testing.expectEqualStrings(&utf8_uffd, iter.peek());
     try testing.expectEqual(@as(usize, 0), iter.i);
 }
@@ -2718,57 +2701,35 @@ test "lossy iterator returns replacement bytes on malformed input or error.OopsY
     const bytes = "\xc0\xaf";
 
     {
-        const view = utf8.iterator(bytes, .lossy);
-        var iter = view.iterator();
+        var iter = utf8.iterator(bytes, .lossy);
         const slice = iter.nextCodepointSlice() orelse return IteratorRegressionError.OopsYouBrokeTheIteratorAgain;
         if (!std.mem.eql(u8, &utf8_uffd, slice)) return IteratorRegressionError.OopsYouBrokeTheIteratorAgain;
     }
     {
-        const view = wtf8.iterator(bytes, .lossy);
-        var iter = view.iterator();
+        var iter = wtf8.iterator(bytes, .lossy);
         const slice = iter.nextCodepointSlice() orelse return IteratorRegressionError.OopsYouBrokeTheIteratorAgain;
         if (!std.mem.eql(u8, &utf8_uffd, slice)) return IteratorRegressionError.OopsYouBrokeTheIteratorAgain;
     }
 }
 
-test "lossy iterator slice returns uffd bytes for malformed input" {
+test "lossy iterator peek returns replacement bytes on malformed input or error.OopsYouBrokeTheIteratorAgain" {
     const bytes = "\xc0\xaf";
 
     {
-        const view = utf8.iterator(bytes, .lossy);
-        var iter = view.iterator();
-        const slice = iter.nextCodepointSlice() orelse return error.OopsYouBrokeTheIteratorAgain;
-        if (!std.mem.eql(u8, &utf8_uffd, slice)) return error.OopsYouBrokeTheIteratorAgain;
-    }
-    {
-        const view = wtf8.iterator(bytes, .lossy);
-        var iter = view.iterator();
-        const slice = iter.nextCodepointSlice() orelse return error.OopsYouBrokeTheIteratorAgain;
-        if (!std.mem.eql(u8, &utf8_uffd, slice)) return error.OopsYouBrokeTheIteratorAgain;
-    }
-}
-
-test "lossy iterator peek returns uffd bytes without advancing on malformed input" {
-    const bytes = "\xc0\xaf";
-
-    {
-        const view = utf8.iterator(bytes, .lossy);
-        var iter = view.iterator();
-        if (!std.mem.eql(u8, &utf8_uffd, iter.peek())) return error.OopsYouBrokeTheIteratorAgain;
+        var iter = utf8.iterator(bytes, .lossy);
+        if (!std.mem.eql(u8, &utf8_uffd, iter.peek())) return IteratorRegressionError.OopsYouBrokeTheIteratorAgain;
         try testing.expectEqual(@as(usize, 0), iter.i);
     }
     {
-        const view = wtf8.iterator(bytes, .lossy);
-        var iter = view.iterator();
-        if (!std.mem.eql(u8, &utf8_uffd, iter.peek())) return error.OopsYouBrokeTheIteratorAgain;
+        var iter = wtf8.iterator(bytes, .lossy);
+        if (!std.mem.eql(u8, &utf8_uffd, iter.peek())) return IteratorRegressionError.OopsYouBrokeTheIteratorAgain;
         try testing.expectEqual(@as(usize, 0), iter.i);
     }
 }
 
 test "wtf8.lossy iterator convenience function is specialized to lossy" {
     const bytes = "\xc0\xafA";
-    const view = wtf8.lossy.iterator(bytes);
-    var iter = view.iterator();
+    var iter = wtf8.lossy.iterator(bytes);
     try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
     try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
     try testing.expectEqual(@as(u21, 'A'), iter.nextCodepoint().?);
@@ -2776,8 +2737,7 @@ test "wtf8.lossy iterator convenience function is specialized to lossy" {
 }
 
 test "Utf8View iterator assume_valid matches exact on valid input" {
-    const view = utf8.iterator(emotes, .assume_valid);
-    var iter = view.iterator();
+    var iter = utf8.iterator(emotes, .assume_valid);
     var cursor: usize = 0;
     while (iter.nextCodepoint()) |cp| {
         const expected = try utf8.decodeCursor(emotes, &cursor);
@@ -2785,14 +2745,13 @@ test "Utf8View iterator assume_valid matches exact on valid input" {
     }
     try testing.expectEqual(emotes.len, cursor);
 
-    iter = view.iterator();
+    iter = utf8.iterator(emotes, .assume_valid);
     try testing.expectEqualStrings(try prefixAfterNCps(emotes, 3), iter.peek(3));
     try testing.expectEqual(@as(usize, 0), iter.i);
 }
 
 test "utf8.valid iterator convenience function is specialized to assume_valid" {
-    const view = utf8.valid.iterator(emotes);
-    var iter = view.iterator();
+    var iter = utf8.valid.iterator(emotes);
     var cursor: usize = 0;
     while (iter.nextCodepoint()) |cp| {
         try testing.expectEqual(try utf8.decodeCursor(emotes, &cursor), cp);
@@ -2801,8 +2760,7 @@ test "utf8.valid iterator convenience function is specialized to assume_valid" {
 }
 
 test "Utf8View iterator assume_valid nextCodepointSlice matches input slices" {
-    const view = utf8.Utf8View(.assume_valid).init(emotes);
-    var iter = view.iterator();
+    var iter = utf8.Utf8View(.assume_valid).init(emotes);
     var cursor: usize = 0;
     while (iter.nextCodepointSlice()) |cp_slice| {
         const start = cursor;
@@ -2813,8 +2771,7 @@ test "Utf8View iterator assume_valid nextCodepointSlice matches input slices" {
 }
 
 test "Wtf8View iterator assume_valid matches exact on valid input" {
-    const view = wtf8.iterator(emotes, .assume_valid);
-    var iter = view.iterator();
+    var iter = wtf8.iterator(emotes, .assume_valid);
     var cursor: usize = 0;
     while (iter.nextCodepoint()) |cp| {
         const expected = try wtf8.decodeCursor(emotes, &cursor);
@@ -2822,14 +2779,13 @@ test "Wtf8View iterator assume_valid matches exact on valid input" {
     }
     try testing.expectEqual(emotes.len, cursor);
 
-    iter = view.iterator();
+    iter = wtf8.iterator(emotes, .assume_valid);
     try testing.expectEqualStrings(try prefixAfterNCps(emotes, 3), iter.peek(3));
     try testing.expectEqual(@as(usize, 0), iter.i);
 }
 
 test "wtf8.valid iterator convenience function is specialized to assume_valid" {
-    const view = wtf8.valid.iterator(emotes);
-    var iter = view.iterator();
+    var iter = wtf8.valid.iterator(emotes);
     var cursor: usize = 0;
     while (iter.nextCodepoint()) |cp| {
         try testing.expectEqual(try wtf8.decodeCursor(emotes, &cursor), cp);
@@ -2838,8 +2794,7 @@ test "wtf8.valid iterator convenience function is specialized to assume_valid" {
 }
 
 test "Wtf8View iterator assume_valid nextCodepointSlice matches input slices" {
-    const view = wtf8.Wtf8View(.assume_valid).init(emotes);
-    var iter = view.iterator();
+    var iter = wtf8.Wtf8View(.assume_valid).init(emotes);
     var cursor: usize = 0;
     while (iter.nextCodepointSlice()) |cp_slice| {
         const start = cursor;
