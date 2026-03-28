@@ -754,27 +754,27 @@ const wtf8_assume_valid = struct {
 const utf8_to_utf16 = struct {
     /// Transcode `utf_8` into UTF-16LE, writing into `utf_16`.
     /// Assumes that `utf_16` has sufficient capacity.
-    pub fn toUtf16Le(utf_16: []u16, utf_8: []const u8) utf16.FromUtf8Error!usize {
+    inline fn toUtf16Le(utf_16: []u16, utf_8: []const u8) utf16.FromUtf8Error!usize {
         return utf8ToUtf16Le(utf_16, utf_8);
     }
 
     /// Transcode `utf_8` into UTF-16BE, writing into `utf_16`.
     /// Assumes that `utf_16` has sufficient capacity.
-    pub fn toUtf16Be(utf_16: []u16, utf_8: []const u8) utf16.FromUtf8Error!usize {
+    inline fn toUtf16Be(utf_16: []u16, utf_8: []const u8) utf16.FromUtf8Error!usize {
         return utf8ToUtf16Be(utf_16, utf_8);
     }
 
     /// Transcode `utf_8` into UTF-16LE using explicit source and destination cursors.
     /// On failure, `i_16` points one past the last written code unit and `i_8`
     /// points to the first invalid source byte.
-    pub fn toUtf16LeCursor(utf_16: []u16, utf_8: []const u8, i_16: *usize, i_8: *usize) utf16.FromUtf8Error!void {
+    inline fn toUtf16LeCursor(utf_16: []u16, utf_8: []const u8, i_16: *usize, i_8: *usize) utf16.FromUtf8Error!void {
         return utf8ToUtf16LeCursor(utf_16, utf_8, i_16, i_8);
     }
 
     /// Transcode `utf_8` into UTF-16BE using explicit source and destination cursors.
     /// On failure, `i_16` points one past the last written code unit and `i_8`
     /// points to the first invalid source byte.
-    pub fn toUtf16BeCursor(utf_16: []u16, utf_8: []const u8, i_16: *usize, i_8: *usize) utf16.FromUtf8Error!void {
+    inline fn toUtf16BeCursor(utf_16: []u16, utf_8: []const u8, i_16: *usize, i_8: *usize) utf16.FromUtf8Error!void {
         return utf8ToUtf16BeCursor(utf_16, utf_8, i_16, i_8);
     }
 };
@@ -782,41 +782,41 @@ const utf8_to_utf16 = struct {
 const wtf8_to_wtf16 = struct {
     /// Transcode `wtf_8` into WTF-16LE, writing into `wtf_16`.
     /// Assumes that `wtf_16` has sufficient capacity.
-    pub fn toWtf16Le(wtf_16: []u16, wtf_8: []const u8) wtf16.FromWtf8Error!usize {
+    inline fn toWtf16Le(wtf_16: []u16, wtf_8: []const u8) wtf16.FromWtf8Error!usize {
         return wtf8ToWtf16Le(wtf_16, wtf_8) catch return error.InvalidWtf8;
     }
 
     /// Transcode `wtf_8` into WTF-16BE, writing into `wtf_16`.
     /// Assumes that `wtf_16` has sufficient capacity.
-    pub fn toWtf16Be(wtf_16: []u16, wtf_8: []const u8) wtf16.FromWtf8Error!usize {
+    inline fn toWtf16Be(wtf_16: []u16, wtf_8: []const u8) wtf16.FromWtf8Error!usize {
         return wtf8ToWtf16Be(wtf_16, wtf_8) catch return error.InvalidWtf8;
     }
 
     /// Transcode `wtf_8` into WTF-16LE using explicit source and destination cursors.
     /// On failure, `i_16` points one past the last written code unit and `i_8`
     /// points to the first invalid source byte.
-    pub fn toWtf16LeCursor(wtf_16: []u16, wtf_8: []const u8, i_16: *usize, i_8: *usize) wtf16.FromWtf8Error!void {
+    inline fn toWtf16LeCursor(wtf_16: []u16, wtf_8: []const u8, i_16: *usize, i_8: *usize) wtf16.FromWtf8Error!void {
         return wtf8ToWtf16LeCursor(wtf_16, wtf_8, i_16, i_8) catch return error.InvalidWtf8;
     }
 
     /// Transcode `wtf_8` into WTF-16BE using explicit source and destination cursors.
     /// On failure, `i_16` points one past the last written code unit and `i_8`
     /// points to the first invalid source byte.
-    pub fn toWtf16BeCursor(wtf_16: []u16, wtf_8: []const u8, i_16: *usize, i_8: *usize) wtf16.FromWtf8Error!void {
+    inline fn toWtf16BeCursor(wtf_16: []u16, wtf_8: []const u8, i_16: *usize, i_8: *usize) wtf16.FromWtf8Error!void {
         return wtf8ToWtf16BeCursor(wtf_16, wtf_8, i_16, i_8) catch return error.InvalidWtf8;
     }
 };
 
 const utf8_lossy_to_utf16 = struct {
     /// Transcode `utf_8` into UTF-16LE, substituting U+FFFD for malformed input.
-    pub fn toUtf16Le(utf_16: []u16, utf_8: []const u8) usize {
+    inline fn toUtf16Le(utf_16: []u16, utf_8: []const u8) usize {
         var i_8: usize = 0;
         var i_16: usize = 0;
         return xtf8LossyToXtf16(true, u8dfa, st_dfa, c_mask, utf_16, utf_8, &i_16, &i_8);
     }
 
     /// Transcode `utf_8` into UTF-16BE, substituting U+FFFD for malformed input.
-    pub fn toUtf16Be(utf_16: []u16, utf_8: []const u8) usize {
+    inline fn toUtf16Be(utf_16: []u16, utf_8: []const u8) usize {
         var i_8: usize = 0;
         var i_16: usize = 0;
         return xtf8LossyToXtf16(false, u8dfa, st_dfa, c_mask, utf_16, utf_8, &i_16, &i_8);
@@ -824,27 +824,27 @@ const utf8_lossy_to_utf16 = struct {
 
     /// Transcode `utf_8` into UTF-16LE using explicit source and destination cursors.
     /// Malformed input is replaced with U+FFFD.
-    pub fn toUtf16LeCursor(utf_16: []u16, utf_8: []const u8, i_16: *usize, i_8: *usize) void {
+    inline fn toUtf16LeCursor(utf_16: []u16, utf_8: []const u8, i_16: *usize, i_8: *usize) void {
         _ = xtf8LossyToXtf16(true, u8dfa, st_dfa, c_mask, utf_16, utf_8, i_16, i_8);
     }
 
     /// Transcode `utf_8` into UTF-16BE using explicit source and destination cursors.
     /// Malformed input is replaced with U+FFFD.
-    pub fn toUtf16BeCursor(utf_16: []u16, utf_8: []const u8, i_16: *usize, i_8: *usize) void {
+    inline fn toUtf16BeCursor(utf_16: []u16, utf_8: []const u8, i_16: *usize, i_8: *usize) void {
         _ = xtf8LossyToXtf16(false, u8dfa, st_dfa, c_mask, utf_16, utf_8, i_16, i_8);
     }
 };
 
 const wtf8_lossy_to_wtf16 = struct {
     /// Transcode `wtf_8` into WTF-16LE, substituting U+FFFD for malformed input.
-    pub fn toWtf16Le(wtf_16: []u16, wtf_8: []const u8) usize {
+    inline fn toWtf16Le(wtf_16: []u16, wtf_8: []const u8) usize {
         var i_8: usize = 0;
         var i_16: usize = 0;
         return xtf8LossyToXtf16(true, w8dfa, st_dfa, c_mask, wtf_16, wtf_8, &i_16, &i_8);
     }
 
     /// Transcode `wtf_8` into WTF-16BE, substituting U+FFFD for malformed input.
-    pub fn toWtf16Be(wtf_16: []u16, wtf_8: []const u8) usize {
+    inline fn toWtf16Be(wtf_16: []u16, wtf_8: []const u8) usize {
         var i_8: usize = 0;
         var i_16: usize = 0;
         return xtf8LossyToXtf16(false, w8dfa, st_dfa, c_mask, wtf_16, wtf_8, &i_16, &i_8);
@@ -852,27 +852,27 @@ const wtf8_lossy_to_wtf16 = struct {
 
     /// Transcode `wtf_8` into WTF-16LE using explicit source and destination cursors.
     /// Malformed input is replaced with U+FFFD.
-    pub fn toWtf16LeCursor(wtf_16: []u16, wtf_8: []const u8, i_16: *usize, i_8: *usize) void {
+    inline fn toWtf16LeCursor(wtf_16: []u16, wtf_8: []const u8, i_16: *usize, i_8: *usize) void {
         _ = xtf8LossyToXtf16(true, w8dfa, st_dfa, c_mask, wtf_16, wtf_8, i_16, i_8);
     }
 
     /// Transcode `wtf_8` into WTF-16BE using explicit source and destination cursors.
     /// Malformed input is replaced with U+FFFD.
-    pub fn toWtf16BeCursor(wtf_16: []u16, wtf_8: []const u8, i_16: *usize, i_8: *usize) void {
+    inline fn toWtf16BeCursor(wtf_16: []u16, wtf_8: []const u8, i_16: *usize, i_8: *usize) void {
         _ = xtf8LossyToXtf16(false, w8dfa, st_dfa, c_mask, wtf_16, wtf_8, i_16, i_8);
     }
 };
 
 const utf8_valid_to_utf16 = struct {
     /// Transcode `utf_8` into UTF-16LE, assuming that `utf_8` is already valid UTF-8.
-    pub fn toUtf16Le(utf_16: []u16, utf_8: []const u8) usize {
+    inline fn toUtf16Le(utf_16: []u16, utf_8: []const u8) usize {
         var i_8: usize = 0;
         var i_16: usize = 0;
         return xtf8AssumeValidToXtf16(true, u8dfa, c_mask, utf_16, utf_8, &i_16, &i_8);
     }
 
     /// Transcode `utf_8` into UTF-16BE, assuming that `utf_8` is already valid UTF-8.
-    pub fn toUtf16Be(utf_16: []u16, utf_8: []const u8) usize {
+    inline fn toUtf16Be(utf_16: []u16, utf_8: []const u8) usize {
         var i_8: usize = 0;
         var i_16: usize = 0;
         return xtf8AssumeValidToXtf16(false, u8dfa, c_mask, utf_16, utf_8, &i_16, &i_8);
@@ -880,27 +880,27 @@ const utf8_valid_to_utf16 = struct {
 
     /// Transcode `utf_8` into UTF-16LE using explicit source and destination cursors.
     /// Assumes that `utf_8` is already valid UTF-8.
-    pub fn toUtf16LeCursor(utf_16: []u16, utf_8: []const u8, i_16: *usize, i_8: *usize) void {
+    inline fn toUtf16LeCursor(utf_16: []u16, utf_8: []const u8, i_16: *usize, i_8: *usize) void {
         _ = xtf8AssumeValidToXtf16(true, u8dfa, c_mask, utf_16, utf_8, i_16, i_8);
     }
 
     /// Transcode `utf_8` into UTF-16BE using explicit source and destination cursors.
     /// Assumes that `utf_8` is already valid UTF-8.
-    pub fn toUtf16BeCursor(utf_16: []u16, utf_8: []const u8, i_16: *usize, i_8: *usize) void {
+    inline fn toUtf16BeCursor(utf_16: []u16, utf_8: []const u8, i_16: *usize, i_8: *usize) void {
         _ = xtf8AssumeValidToXtf16(false, u8dfa, c_mask, utf_16, utf_8, i_16, i_8);
     }
 };
 
 const wtf8_valid_to_wtf16 = struct {
     /// Transcode `wtf_8` into WTF-16LE, assuming that `wtf_8` is already valid WTF-8.
-    pub fn toWtf16Le(wtf_16: []u16, wtf_8: []const u8) usize {
+    inline fn toWtf16Le(wtf_16: []u16, wtf_8: []const u8) usize {
         var i_8: usize = 0;
         var i_16: usize = 0;
         return xtf8AssumeValidToXtf16(true, w8dfa, c_mask, wtf_16, wtf_8, &i_16, &i_8);
     }
 
     /// Transcode `wtf_8` into WTF-16BE, assuming that `wtf_8` is already valid WTF-8.
-    pub fn toWtf16Be(wtf_16: []u16, wtf_8: []const u8) usize {
+    inline fn toWtf16Be(wtf_16: []u16, wtf_8: []const u8) usize {
         var i_8: usize = 0;
         var i_16: usize = 0;
         return xtf8AssumeValidToXtf16(false, w8dfa, c_mask, wtf_16, wtf_8, &i_16, &i_8);
@@ -908,13 +908,13 @@ const wtf8_valid_to_wtf16 = struct {
 
     /// Transcode `wtf_8` into WTF-16LE using explicit source and destination cursors.
     /// Assumes that `wtf_8` is already valid WTF-8.
-    pub fn toWtf16LeCursor(wtf_16: []u16, wtf_8: []const u8, i_16: *usize, i_8: *usize) void {
+    inline fn toWtf16LeCursor(wtf_16: []u16, wtf_8: []const u8, i_16: *usize, i_8: *usize) void {
         _ = xtf8AssumeValidToXtf16(true, w8dfa, c_mask, wtf_16, wtf_8, i_16, i_8);
     }
 
     /// Transcode `wtf_8` into WTF-16BE using explicit source and destination cursors.
     /// Assumes that `wtf_8` is already valid WTF-8.
-    pub fn toWtf16BeCursor(wtf_16: []u16, wtf_8: []const u8, i_16: *usize, i_8: *usize) void {
+    inline fn toWtf16BeCursor(wtf_16: []u16, wtf_8: []const u8, i_16: *usize, i_8: *usize) void {
         _ = xtf8AssumeValidToXtf16(false, w8dfa, c_mask, wtf_16, wtf_8, i_16, i_8);
     }
 };
