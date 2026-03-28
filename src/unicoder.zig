@@ -74,22 +74,34 @@ pub const UTF_REJECT = 12;
 pub const utf8 = struct {
     pub const Error = error{InvalidUtf8};
 
+    /// Decode the codepoint at `slice[0]`.
+    /// Assumes that `slice.len > 0`.
     pub fn decode(slice: []const u8) Error!u21 {
         return decodeRune(slice);
     }
 
+    /// Decode the codepoint at `slice[cursor.*]`.
+    /// The cursor is advanced to one index past the decoded codepoint,
+    /// which may include `slice.len`. On error, the cursor points to
+    /// the first invalid byte in the sequence. Asserts that `cursor.*`
+    /// indexes `slice`.
     pub fn decodeCursor(slice: []const u8, cursor: *usize) Error!u21 {
         return decodeRuneCursor(slice, cursor);
     }
 
+    /// Return whether `slice` is valid UTF-8.
     pub fn validateSlice(slice: []const u8) bool {
         return validateRuneSlice(slice);
     }
 
+    /// Return whether `slice` is valid UTF-8.
+    /// On success, `cursor` is advanced to `slice.len`. On failure,
+    /// it points to the first rejected byte.
     pub fn validateSliceCursor(slice: []const u8, cursor: *usize) bool {
         return validateRuneCursor(slice, cursor);
     }
 
+    /// Count the number of UTF-8 codepoints in `slice`.
     pub fn countCodepoints(slice: []const u8) Error!usize {
         return countRunes(slice);
     }
