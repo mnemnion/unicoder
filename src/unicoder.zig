@@ -518,7 +518,11 @@ const utf8_assume_valid = struct {
     pub const ErrorStrategy = utf8.ErrorStrategy;
 
     /// Wrap a byte slice as a UTF-8 view assuming valid UTF-8 input.
+    /// In .Debug mode, it will also assert this property.
     pub fn iterator(slice: []const u8) Utf8View {
+        if (is_debug) {
+            assert(utf8.validate(slice));
+        }
         return Utf8View.init(slice);
     }
 
@@ -566,7 +570,11 @@ const wtf8_assume_valid = struct {
     pub const ErrorStrategy = wtf8.ErrorStrategy;
 
     /// Wrap a byte slice as a WTF-8 view assuming valid WTF-8 input.
+    /// In .Debug mode, it will also assert this property.
     pub fn iterator(slice: []const u8) Wtf8View {
+        if (is_debug) {
+            assert(wtf8.validate(slice));
+        }
         return Wtf8View.init(slice);
     }
 
@@ -2542,3 +2550,5 @@ test "Wtf8View iterator assume_valid nextCodepointSlice matches input slices" {
 const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
+const builtin = @import("builtin");
+const is_debug = builtin.mode == .Debug;
