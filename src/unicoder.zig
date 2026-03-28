@@ -85,13 +85,80 @@ const Xf8Kind = enum {
     wtf8,
 };
 
+/// Operations on Unicode codepoints, specialized by encoding where needed.
+pub const codepoint = struct {
+    /// Error returned when a codepoint cannot be encoded as UTF-8.
+    pub const Utf8EncodeError = error{ Utf8CannotEncodeSurrogateHalf, CodepointTooLarge };
+
+    /// Error returned when a codepoint cannot be encoded as WTF-8.
+    pub const Wtf8EncodeError = error{CodepointTooLarge};
+
+    /// Error returned when a codepoint cannot be encoded as UTF-16.
+    pub const Utf16EncodeError = error{ Utf16CannotEncodeSurrogateHalf, CodepointTooLarge };
+
+    /// Error returned when a codepoint cannot be encoded as WTF-16.
+    pub const Wtf16EncodeError = error{CodepointTooLarge};
+
+    /// Return the number of bytes required to encode `c` as UTF-8.
+    pub fn utf8Width(c: u21) error{CodepointTooLarge}!u3 {
+        return xtf8CodepointWidth(c);
+    }
+
+    /// Return the number of bytes required to encode `c` as WTF-8.
+    pub fn wtf8Width(c: u21) error{CodepointTooLarge}!u3 {
+        return xtf8CodepointWidth(c);
+    }
+
+    /// Return the number of UTF-16 code units required to encode `c`.
+    pub fn utf16Width(c: u21) error{CodepointTooLarge}!u2 {
+        return utf16CodepointSequenceLengthImpl(c);
+    }
+
+    /// Return the number of WTF-16 code units required to encode `c`.
+    pub fn wtf16Width(c: u21) error{CodepointTooLarge}!u2 {
+        return utf16CodepointSequenceLengthImpl(c);
+    }
+
+    /// Encode `c` as UTF-8 into `out`.
+    pub fn toUtf8(c: u21, out: []u8) Utf8EncodeError!u3 {
+        return xtf8Encode(c, out, .no_surrogate);
+    }
+
+    /// Encode `c` as WTF-8 into `out`.
+    pub fn toWtf8(c: u21, out: []u8) Wtf8EncodeError!u3 {
+        return xtf8Encode(c, out, .allow_surrogate);
+    }
+
+    /// Encode `c` as UTF-16 into `out`.
+    pub fn toUtf16(c: u21, out: []u16) Utf16EncodeError!u2 {
+        return xtf16Encode(c, out, .no_surrogate);
+    }
+
+    /// Encode `c` as WTF-16 into `out`.
+    pub fn toWtf16(c: u21, out: []u16) Wtf16EncodeError!u2 {
+        return xtf16Encode(c, out, .allow_surrogate);
+    }
+
+    /// Return whether `value` is a valid Unicode codepoint.
+    pub fn isValidUnicode(value: u21) bool {
+        return utf8ValidCodepoint(value);
+    }
+
+    /// Return whether `value` is a valid WTF-8 codepoint.
+    pub fn isValidWtf(value: u21) bool {
+        return wtf8ValidCodepoint(value);
+    }
+
+    /// Return whether `c` is a surrogate half.
+    pub fn isSurrogate(c: u21) bool {
+        return isSurrogateImpl(c);
+    }
+};
+
 /// Operations onto, and out of, the UTF-8 encoding.
 pub const utf8 = struct {
     /// Error returned when invalid Unicode is encountered.
     pub const Error = error{InvalidUtf8};
-
-    /// Error returned when a codepoint cannot be encoded as UTF-8.
-    pub const EncodeError = error{ Utf8CannotEncodeSurrogateHalf, CodepointTooLarge };
 
     /// A "view" into a Utf8 string.  Comes in several kinds.
     pub const Utf8View = Xf8View(.utf8);
@@ -115,29 +182,9 @@ pub const utf8 = struct {
         return Utf8View(strategy).init(slice);
     }
 
-    /// Return the number of bytes required to encode `c` as UTF-8.
-    pub fn codepointWidth(c: u21) error{CodepointTooLarge}!u3 {
-        return xtf8CodepointWidth(c);
-    }
-
     /// Return the length in bytes of the codepoint beginning with `first_byte`.
     pub fn byteLength(first_byte: u8) error{Utf8InvalidStartByte}!u3 {
         return xtf8ByteLength(first_byte);
-    }
-
-    /// Encode `c` as UTF-8 into `out`.
-    pub fn encode(c: u21, out: []u8) EncodeError!u3 {
-        return xtf8Encode(c, out, .no_surrogate);
-    }
-
-    /// Return whether the given codepoint is valid UTF-8.
-    pub fn validCodepoint(value: u21) bool {
-        return utf8ValidCodepoint(value);
-    }
-
-    /// Return whether the given codepoint is a surrogate half.
-    pub fn isSurrogate(c: u21) bool {
-        return isSurrogateImpl(c);
     }
 
     /// Decode the codepoint at `slice[0]`.
@@ -179,9 +226,6 @@ pub const wtf8 = struct {
     /// Error returned when invalid Unicode is encountered.
     pub const Error = error{InvalidWtf8};
 
-    /// Error returned when a codepoint cannot be encoded as WTF-8.
-    pub const EncodeError = error{CodepointTooLarge};
-
     /// A "view" into a Wtf8 string.  Comes in several kinds.
     pub const Wtf8View = Xf8View(.wtf8);
 
@@ -204,29 +248,9 @@ pub const wtf8 = struct {
         return Wtf8View(strategy).init(slice);
     }
 
-    /// Return the number of bytes required to encode `c` as WTF-8.
-    pub fn codepointWidth(c: u21) error{CodepointTooLarge}!u3 {
-        return xtf8CodepointWidth(c);
-    }
-
     /// Return the length in bytes of the codepoint beginning with `first_byte`.
     pub fn byteLength(first_byte: u8) error{Utf8InvalidStartByte}!u3 {
         return xtf8ByteLength(first_byte);
-    }
-
-    /// Encode `c` as WTF-8 into `out`.
-    pub fn encode(c: u21, out: []u8) EncodeError!u3 {
-        return xtf8Encode(c, out, .allow_surrogate);
-    }
-
-    /// Return whether the given codepoint is valid WTF-8.
-    pub fn validCodepoint(value: u21) bool {
-        return wtf8ValidCodepoint(value);
-    }
-
-    /// Return whether the given codepoint is a surrogate half.
-    pub fn isSurrogateCodepoint(c: u21) bool {
-        return isSurrogateImpl(c);
     }
 
     /// Decode the codepoint at `slice[0]`.
@@ -270,7 +294,7 @@ pub const wtf8 = struct {
 /// Operations onto, and out of, the UTF-16 encoding.
 pub const utf16 = struct {
     /// Error returned when transcoding UTF-16 into UTF-8 fails.
-    pub const ToUtf8Error = Utf16LeIterator.NextCodepointError || utf8.EncodeError;
+    pub const ToUtf8Error = Utf16LeIterator.NextCodepointError || codepoint.Utf8EncodeError;
 
     /// Error returned when invalid UTF-8 is encountered while producing UTF-16.
     pub const FromUtf8Error = error{InvalidUtf8};
@@ -295,11 +319,6 @@ pub const utf16 = struct {
     /// Return whether `c` is a low surrogate half.
     pub fn isLowSurrogate(c: u16) bool {
         return utf16IsLowSurrogateImpl(c);
-    }
-
-    /// Return the number of UTF-16 code units required to encode `c`.
-    pub fn codepointWidth(c: u21) error{CodepointTooLarge}!u2 {
-        return utf16CodepointSequenceLengthImpl(c);
     }
 
     /// Return the number of UTF-16 code units in the codepoint beginning with `first_code_unit`.
@@ -362,11 +381,6 @@ pub const wtf16 = struct {
         return utf16IsLowSurrogateImpl(c);
     }
 
-    /// Return the number of WTF-16 code units required to encode `c`.
-    pub fn codepointWidth(c: u21) error{CodepointTooLarge}!u2 {
-        return utf16CodepointSequenceLengthImpl(c);
-    }
-
     /// Return the number of WTF-16 code units in the codepoint beginning with `first_code_unit`.
     pub fn codeUnitWidth(first_code_unit: u16) error{Utf16InvalidStartCodeUnit}!u2 {
         return utf16CodeUnitSequenceLengthImpl(first_code_unit);
@@ -401,6 +415,22 @@ pub const wtf16 = struct {
 };
 
 const utf8_lossy = struct {
+    /// A "view" into a Utf8 string using lossy error handling.
+    pub const Utf8View = utf8.Utf8View(.lossy);
+
+    /// The strategy for error handling of a given Utf8View.
+    pub const ErrorStrategy = utf8.ErrorStrategy;
+
+    /// Wrap a byte slice as a UTF-8 view using lossy error handling.
+    pub fn iterator(slice: []const u8) Utf8View {
+        return Utf8View.init(slice);
+    }
+
+    /// Return the length in bytes of the codepoint beginning with `first_byte`.
+    pub fn byteLength(first_byte: u8) error{Utf8InvalidStartByte}!u3 {
+        return utf8.byteLength(first_byte);
+    }
+
     /// Decode the codepoint at `slice[0]`, substituting U+FFFD for malformed input.
     /// `slice.len` must not be `0`.
     pub fn decode(slice: []const u8) u21 {
@@ -433,6 +463,22 @@ const utf8_lossy = struct {
 };
 
 const wtf8_lossy = struct {
+    /// A "view" into a Wtf8 string using lossy error handling.
+    pub const Wtf8View = wtf8.Wtf8View(.lossy);
+
+    /// The strategy for error handling of a given Wtf8View.
+    pub const ErrorStrategy = wtf8.ErrorStrategy;
+
+    /// Wrap a byte slice as a WTF-8 view using lossy error handling.
+    pub fn iterator(slice: []const u8) Wtf8View {
+        return Wtf8View.init(slice);
+    }
+
+    /// Return the length in bytes of the codepoint beginning with `first_byte`.
+    pub fn byteLength(first_byte: u8) error{Utf8InvalidStartByte}!u3 {
+        return wtf8.byteLength(first_byte);
+    }
+
     /// Decode the codepoint at `slice[0]`, substituting U+FFFD for malformed input.
     /// `slice.len` must not be `0`.
     pub fn decode(slice: []const u8) u21 {
@@ -465,6 +511,22 @@ const wtf8_lossy = struct {
 };
 
 const utf8_assume_valid = struct {
+    /// A "view" into a Utf8 string assuming valid UTF-8 input.
+    pub const Utf8View = utf8.Utf8View(.assume_valid);
+
+    /// The strategy for error handling of a given Utf8View.
+    pub const ErrorStrategy = utf8.ErrorStrategy;
+
+    /// Wrap a byte slice as a UTF-8 view assuming valid UTF-8 input.
+    pub fn iterator(slice: []const u8) Utf8View {
+        return Utf8View.init(slice);
+    }
+
+    /// Return the length in bytes of the codepoint beginning with `first_byte`.
+    pub fn byteLength(first_byte: u8) error{Utf8InvalidStartByte}!u3 {
+        return utf8.byteLength(first_byte);
+    }
+
     /// Decode the codepoint at `slice[0]`.
     /// Assumes that `slice` begins with a valid UTF-8 codepoint.
     pub fn decode(slice: []const u8) u21 {
@@ -497,6 +559,22 @@ const utf8_assume_valid = struct {
 };
 
 const wtf8_assume_valid = struct {
+    /// A "view" into a Wtf8 string assuming valid WTF-8 input.
+    pub const Wtf8View = wtf8.Wtf8View(.assume_valid);
+
+    /// The strategy for error handling of a given Wtf8View.
+    pub const ErrorStrategy = wtf8.ErrorStrategy;
+
+    /// Wrap a byte slice as a WTF-8 view assuming valid WTF-8 input.
+    pub fn iterator(slice: []const u8) Wtf8View {
+        return Wtf8View.init(slice);
+    }
+
+    /// Return the length in bytes of the codepoint beginning with `first_byte`.
+    pub fn byteLength(first_byte: u8) error{Utf8InvalidStartByte}!u3 {
+        return wtf8.byteLength(first_byte);
+    }
+
     /// Decode the codepoint at `slice[0]`.
     /// Assumes that `slice` begins with a valid WTF-8 codepoint.
     pub fn decode(slice: []const u8) u21 {
@@ -778,6 +856,26 @@ fn xtf8Encode(c: u21, out: []u8, comptime surrogates: Surrogates) !u3 {
             out[1] = @as(u8, @intCast(0b1000_0000 | ((c >> 12) & 0b0011_1111)));
             out[2] = @as(u8, @intCast(0b1000_0000 | ((c >> 6) & 0b0011_1111)));
             out[3] = @as(u8, @intCast(0b1000_0000 | (c & 0b0011_1111)));
+        },
+        else => unreachable,
+    }
+    return length;
+}
+
+fn xtf16Encode(c: u21, out: []u16, comptime surrogates: Surrogates) !u2 {
+    const length = try utf16CodepointSequenceLengthImpl(c);
+    assert(out.len >= length);
+    switch (length) {
+        1 => {
+            if (surrogates == .no_surrogate and isSurrogateImpl(c)) {
+                return error.Utf16CannotEncodeSurrogateHalf;
+            }
+            out[0] = @intCast(c);
+        },
+        2 => {
+            const cp = c - 0x10000;
+            out[0] = @as(u16, @intCast(0xD800 + (cp >> 10)));
+            out[1] = @as(u16, @intCast(0xDC00 + (cp & 0x03FF)));
         },
         else => unreachable,
     }
@@ -1733,27 +1831,30 @@ test "wtf8 wrappers remap malformed input to InvalidWtf8" {
     try testing.expectError(error.InvalidWtf8, wtf8.decodeCursor(invalid, &cursor));
 }
 
-test "utf8 encode helpers match std expectations" {
+test "codepoint helpers match encoding expectations" {
     var out: [4]u8 = undefined;
+    var out_16: [2]u16 = undefined;
 
-    try testing.expectEqual(@as(u3, 1), try utf8.codepointWidth('a'));
-    try testing.expectEqual(@as(u3, 2), try utf8.codepointWidth(0x03B1));
-    try testing.expectEqual(@as(u3, 3), try utf8.codepointWidth(0x2205));
-    try testing.expectEqual(@as(u3, 4), try utf8.codepointWidth(0x1F913));
+    try testing.expectEqual(@as(u3, 1), try codepoint.utf8Width('a'));
+    try testing.expectEqual(@as(u3, 2), try codepoint.utf8Width(0x03B1));
+    try testing.expectEqual(@as(u3, 3), try codepoint.utf8Width(0x2205));
+    try testing.expectEqual(@as(u3, 4), try codepoint.utf8Width(0x1F913));
+    try testing.expectEqual(@as(u3, 3), try codepoint.wtf8Width(0xD800));
+    try testing.expectEqual(@as(u2, 2), try codepoint.utf16Width(0x1F913));
+    try testing.expectEqual(@as(u2, 2), try codepoint.wtf16Width(0x1F913));
     try testing.expectEqual(@as(u3, 3), try utf8.byteLength("∅"[0]));
-    try testing.expect(utf8.validCodepoint(0x10FFFF));
-    try testing.expect(!utf8.validCodepoint(0xD800));
-    try testing.expect(utf8.isSurrogate(0xD800));
-    try testing.expectEqualSlices(u8, "🤓", out[0..try utf8.encode(0x1F913, &out)]);
-    try testing.expectError(error.Utf8CannotEncodeSurrogateHalf, utf8.encode(0xD800, &out));
-}
-
-test "wtf8 encode helpers allow surrogate halves" {
-    var out: [4]u8 = undefined;
-
-    try testing.expectEqual(@as(u3, 3), try wtf8.codepointWidth(0xD800));
-    try testing.expect(wtf8.validCodepoint(0xD800));
-    try testing.expectEqualSlices(u8, "\xed\xa0\x80", out[0..try wtf8.encode(0xD800, &out)]);
+    try testing.expect(codepoint.isValidUnicode(0x10FFFF));
+    try testing.expect(!codepoint.isValidUnicode(0xD800));
+    try testing.expect(codepoint.isValidWtf(0xD800));
+    try testing.expect(codepoint.isSurrogate(0xD800));
+    try testing.expectEqualSlices(u8, "🤓", out[0..try codepoint.toUtf8(0x1F913, &out)]);
+    try testing.expectError(error.Utf8CannotEncodeSurrogateHalf, codepoint.toUtf8(0xD800, &out));
+    try testing.expectEqualSlices(u8, "\xed\xa0\x80", out[0..try codepoint.toWtf8(0xD800, &out)]);
+    try testing.expectEqual(@as(u2, 2), try codepoint.toUtf16(0x1F913, &out_16));
+    try testing.expectEqualSlices(u16, &.{ 0xD83E, 0xDD13 }, out_16[0..2]);
+    try testing.expectError(error.Utf16CannotEncodeSurrogateHalf, codepoint.toUtf16(0xD800, &out_16));
+    try testing.expectEqual(@as(u2, 1), try codepoint.toWtf16(0xD800, &out_16));
+    try testing.expectEqualSlices(u16, &.{0xD800}, out_16[0..1]);
 }
 
 test "utf16 helpers identify surrogate structure" {
@@ -1761,7 +1862,6 @@ test "utf16 helpers identify surrogate structure" {
     try testing.expect(!utf16.isHighSurrogate('a'));
     try testing.expect(utf16.isLowSurrogate(0xDC00));
     try testing.expect(!utf16.isLowSurrogate('a'));
-    try testing.expectEqual(@as(u2, 2), try utf16.codepointWidth(0x1F913));
     try testing.expectEqual(@as(u2, 2), try utf16.codeUnitWidth(0xD800));
     try testing.expectError(error.Utf16InvalidStartCodeUnit, utf16.codeUnitWidth(0xDC00));
     try testing.expectEqual(@as(u21, 0x1F913), try utf16.decodePair(&.{ 0xD83E, 0xDD13 }));
@@ -2269,6 +2369,16 @@ test "Utf8View iterator lossy yields replacements and maximal subpart slices" {
     try testing.expectEqual(@as(usize, 0), iter.i);
 }
 
+test "utf8.lossy iterator convenience function is specialized to lossy" {
+    const bytes = "\xc0\xafA";
+    const view = utf8.lossy.iterator(bytes);
+    var iter = view.iterator();
+    try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
+    try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
+    try testing.expectEqual(@as(u21, 'A'), iter.nextCodepoint().?);
+    try testing.expectEqual(@as(?u21, null), iter.nextCodepoint());
+}
+
 test "wtf8.lossy preserves valid input and replaces malformed input" {
     try testing.expectEqual(@as(u21, 0x03B1), wtf8.lossy.decode("α"));
     try expectWtf8LossyDecode("\xc0\xaf", &.{ 0xfffd, 0xfffd }, &.{ 1, 1 });
@@ -2345,6 +2455,16 @@ test "Wtf8View iterator lossy yields replacements without errors" {
     try testing.expectEqual(@as(usize, 0), iter.i);
 }
 
+test "wtf8.lossy iterator convenience function is specialized to lossy" {
+    const bytes = "\xc0\xafA";
+    const view = wtf8.lossy.iterator(bytes);
+    var iter = view.iterator();
+    try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
+    try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
+    try testing.expectEqual(@as(u21, 'A'), iter.nextCodepoint().?);
+    try testing.expectEqual(@as(?u21, null), iter.nextCodepoint());
+}
+
 test "Utf8View iterator assume_valid matches exact on valid input" {
     const view = utf8.iterator(emotes, .assume_valid);
     var iter = view.iterator();
@@ -2358,6 +2478,16 @@ test "Utf8View iterator assume_valid matches exact on valid input" {
     iter = view.iterator();
     try testing.expectEqualStrings(try prefixAfterNCps(emotes, 3), iter.peek(3));
     try testing.expectEqual(@as(usize, 0), iter.i);
+}
+
+test "utf8.valid iterator convenience function is specialized to assume_valid" {
+    const view = utf8.valid.iterator(emotes);
+    var iter = view.iterator();
+    var cursor: usize = 0;
+    while (iter.nextCodepoint()) |cp| {
+        try testing.expectEqual(try utf8.decodeCursor(emotes, &cursor), cp);
+    }
+    try testing.expectEqual(emotes.len, cursor);
 }
 
 test "Utf8View iterator assume_valid nextCodepointSlice matches input slices" {
@@ -2385,6 +2515,16 @@ test "Wtf8View iterator assume_valid matches exact on valid input" {
     iter = view.iterator();
     try testing.expectEqualStrings(try prefixAfterNCps(emotes, 3), iter.peek(3));
     try testing.expectEqual(@as(usize, 0), iter.i);
+}
+
+test "wtf8.valid iterator convenience function is specialized to assume_valid" {
+    const view = wtf8.valid.iterator(emotes);
+    var iter = view.iterator();
+    var cursor: usize = 0;
+    while (iter.nextCodepoint()) |cp| {
+        try testing.expectEqual(try wtf8.decodeCursor(emotes, &cursor), cp);
+    }
+    try testing.expectEqual(emotes.len, cursor);
 }
 
 test "Wtf8View iterator assume_valid nextCodepointSlice matches input slices" {
