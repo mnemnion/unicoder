@@ -250,6 +250,11 @@ pub const utf8 = struct {
     pub fn toUtf16BeCursor(utf_16: []u16, utf_8: []const u8, i_16: *usize, i_8: *usize) utf16.FromUtf8Error!void {
         return utf8_to_utf16.toUtf16BeCursor(utf_16, utf_8, i_16, i_8);
     }
+
+    /// Count the number of UTF-16 code units required to transcode `utf_8` into UTF-16.
+    pub fn countUtf16Units(utf_8: []const u8) utf16.FromUtf8Error!usize {
+        return calcUtf16LeLenXtf8(utf_8);
+    }
 };
 
 /// Operations onto, and out of, the wtf8 encoding.  See:
@@ -349,6 +354,11 @@ pub const wtf8 = struct {
     pub fn toWtf16BeCursor(wtf_16: []u16, wtf_8: []const u8, i_16: *usize, i_8: *usize) wtf16.FromWtf8Error!void {
         return wtf8_to_wtf16.toWtf16BeCursor(wtf_16, wtf_8, i_16, i_8);
     }
+
+    /// Count the number of WTF-16 code units required to transcode `wtf_8` into WTF-16.
+    pub fn countWtf16Units(wtf_8: []const u8) wtf16.FromWtf8Error!usize {
+        return calcWtf16LeLenXtf8(wtf_8);
+    }
 };
 
 /// Operations onto, and out of, the UTF-16 encoding.
@@ -401,10 +411,6 @@ pub const utf16 = struct {
         return calcUtf8LenImpl(utf16le);
     }
 
-    /// Return the number of UTF-16 code units required to transcode `utf_8` into UTF-16.
-    pub fn calcLen(utf_8: []const u8) FromUtf8Error!usize {
-        return calcUtf16LeLenXtf8(utf_8);
-    }
 };
 
 /// Operations onto, and out of, the WTF-16 encoding.
@@ -454,10 +460,6 @@ pub const wtf16 = struct {
         return calcWtf8LenImpl(wtf16le);
     }
 
-    /// Return the number of WTF-16 code units required to transcode `wtf_8` into WTF-16.
-    pub fn calcLen(wtf_8: []const u8) FromWtf8Error!usize {
-        return calcWtf16LeLenXtf8(wtf_8);
-    }
 };
 
 const utf8_lossy = struct {
@@ -2126,9 +2128,9 @@ test "utf16LeToUtf8 and wtf16LeToWtf8 transcode correctly" {
     try testing.expectError(error.DanglingSurrogateHalf, utf16.toUtf8(&out_utf8, &dangling));
 }
 
-test "calc utf16 and wtf8 lengths match transcoded output" {
-    try testing.expectEqual(@as(usize, 5), try utf16.calcLen(greek));
-    try testing.expectEqual(@as(usize, 10), try utf16.calcLen(emotes));
+test "utf8 and wtf8 count utf16 units needed for transcoding" {
+    try testing.expectEqual(@as(usize, 5), try utf8.countUtf16Units(greek));
+    try testing.expectEqual(@as(usize, 10), try utf8.countUtf16Units(emotes));
 
     var wtf16_buf = [_]u16{
         std.mem.nativeToLittle(u16, 0xD800),
@@ -2138,7 +2140,7 @@ test "calc utf16 and wtf8 lengths match transcoded output" {
     var out_wtf8: [16]u8 = undefined;
     const wtf8_len = wtf16.toWtf8(&out_wtf8, &wtf16_buf);
     try testing.expectEqual(wtf8_len, wtf16.calcWtf8Len(&wtf16_buf));
-    try testing.expectEqual(@as(usize, 1), try wtf16.calcLen("\xed\xa0\x80"));
+    try testing.expectEqual(@as(usize, 1), try wtf8.countWtf16Units("\xed\xa0\x80"));
 }
 
 test "utf16 exact utf8 export errors on malformed surrogate structure" {
