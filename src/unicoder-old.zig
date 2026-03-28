@@ -1,14 +1,7 @@
-//! Unicoder: std.unicode, but good
+//! Unicode decoding, validation, and counting primitives.
 //!
-//! This library covers the same basic ground as std.unicode, but is
-//! consistently faster (or in a few cases, at least identical), and is
-//! organized by namespace, instead of smashing namespaces into exceptionally
-//! long function names.
-//!
-//! It also provides several varieties of operation: error-producing is the
-//! default, `lossy` uses the replacement character in the event of errors, and
-//! `valid` assumes you know what you're doing and does the fastest possible
-//! thing which will give the correct result if you actually do.
+//! The implementation in this file is extracted from `runerip`, with
+//! the public surface reorganized into encoding namespaces.
 
 // zig fmt: off
 
@@ -527,10 +520,8 @@ const utf8_assume_valid = struct {
     /// Wrap a byte slice as a UTF-8 view assuming valid UTF-8 input.
     /// In .Debug modes, it will also assert this property.
     pub fn iterator(slice: []const u8) Utf8View {
-        if (is_debug) {
-            assert(utf8.validate(slice));
-        }
-        return Utf8View.init(slice);
+        if (is_debug)
+            return Utf8View.init(slice);
     }
 
     /// Return the length in bytes of the codepoint beginning with `first_byte`.
@@ -577,19 +568,13 @@ const wtf8_assume_valid = struct {
     pub const ErrorStrategy = wtf8.ErrorStrategy;
 
     /// Wrap a byte slice as a WTF-8 view assuming valid WTF-8 input.
-    /// In .Debug mode this also asserts that validity.
     pub fn iterator(slice: []const u8) Wtf8View {
-        if (is_debug) {
-            assert(utf8.validate(slice));
-        }
         return Wtf8View.init(slice);
     }
 
     /// Return the length in bytes of the codepoint beginning with `first_byte`.
-    pub fn byteLength(first_byte: u8) u3 {
-        return wtf8.byteLength(first_byte) catch {
-            return 1;
-        };
+    pub fn byteLength(first_byte: u8) error{Utf8InvalidStartByte}!u3 {
+        return wtf8.byteLength(first_byte);
     }
 
     /// Decode the codepoint at `slice[0]`.
