@@ -1326,12 +1326,17 @@ fn LossyCpIteratorImpl(comptime cu_dfa: anytype) type {
             return decodeAnyLossyXtf8Cursor(cu_dfa, st_dfa, c_mask, iter.bytes, &iter.i);
         }
 
-        /// Return the byte slice consumed for the next codepoint or maximal subpart.
+        /// Return the bytes of the next emitted codepoint.
+        /// Malformed input yields the UTF-8 encoding of U+FFFD.
         pub fn nextCodepointSlice(iter: *@This()) ?[]const u8 {
             if (iter.i >= iter.bytes.len) return null;
             const start = iter.i;
-            _ = decodeAnyLossyXtf8Cursor(cu_dfa, st_dfa, c_mask, iter.bytes, &iter.i);
-            return iter.bytes[start..iter.i];
+            const cp = decodeAnyLossyXtf8Cursor(cu_dfa, st_dfa, c_mask, iter.bytes, &iter.i);
+            const source = iter.bytes[start..iter.i];
+            if (cp == 0xfffd and !std.mem.eql(u8, source, &utf8_uffd)) {
+                return &utf8_uffd;
+            }
+            return source;
         }
 
         /// Look ahead at the next `n` codepoints without advancing the iterator.
@@ -2209,6 +2214,15 @@ fn expectWtf8LossyIteratorSlices(bytes: []const u8, expected_lens: []const usize
     try testing.expectEqual(@as(?[]const u8, null), iter.nextCodepointSlice());
 }
 
+fn expectUtf8LossyOutputSlices(bytes: []const u8, expected_slices: []const []const u8) !void {
+    const view = utf8.iterator(bytes, .lossy);
+    var iter = view.iterator();
+    for (expected_slices) |expected| {
+        try testing.expectEqualStrings(expected, iter.nextCodepointSlice().?);
+    }
+    try testing.expectEqual(@as(?[]const u8, null), iter.nextCodepointSlice());
+}
+
 test "Utf8View iterator exact nextCodepoint matches decodeCursor" {
     try testUtf8ViewNextCp(ascii);
     try testUtf8ViewNextCp(greek);
@@ -2358,7 +2372,7 @@ test "utf8.lossy transcoding emits replacement characters" {
     try testing.expectEqual(bytes.len, i_8);
 }
 
-test "Utf8View iterator lossy yields replacements and maximal subpart slices" {
+test "Utf8View iterator lossy yields replacements and emitted slices" {
     const bytes = "\xe1\x80\xe2\xf0\x91\x92\xf1\xbf\x41";
     const view = utf8.iterator(bytes, .lossy);
     var iter = view.iterator();
@@ -2370,11 +2384,18 @@ test "Utf8View iterator lossy yields replacements and maximal subpart slices" {
     try testing.expectEqual(@as(u21, 0x41), iter.nextCodepoint().?);
     try testing.expectEqual(@as(?u21, null), iter.nextCodepoint());
 
-    try expectUtf8LossyIteratorSlices(bytes, &.{ 2, 1, 3, 2, 1 });
+    try expectUtf8LossyIteratorSlices(bytes, &.{ 3, 3, 3, 3, 1 });
 
     iter = view.iterator();
     try testing.expectEqualStrings(prefixAfterNLossyCps(u8dfa, bytes, 3), iter.peek(3));
     try testing.expectEqual(@as(usize, 0), iter.i);
+}
+
+test "Utf8View iterator lossy nextCodepointSlice returns emitted bytes" {
+    try expectUtf8LossyOutputSlices(
+        "\xe1\x80\xe2\xf0\x91\x92\xf1\xbf\x41\xef\xbf\xbd",
+        &.{ "\xef\xbf\xbd", "\xef\xbf\xbd", "\xef\xbf\xbd", "\xef\xbf\xbd", "A", "\xef\xbf\xbd" },
+    );
 }
 
 test "utf8.lossy iterator convenience function is specialized to lossy" {
@@ -2447,7 +2468,7 @@ test "wtf8.assume_valid validate matches exact validation" {
     try testing.expectEqual(exact_cursor, assume_cursor);
 }
 
-test "Wtf8View iterator lossy yields replacements without errors" {
+test "Wtf8View iterator lossy yields replacements and emitted slices" {
     const bytes = "\xc0\xaf";
     const view = wtf8.iterator(bytes, .lossy);
     var iter = view.iterator();
@@ -2456,7 +2477,7 @@ test "Wtf8View iterator lossy yields replacements without errors" {
     try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
     try testing.expectEqual(@as(?u21, null), iter.nextCodepoint());
 
-    try expectWtf8LossyIteratorSlices(bytes, &.{ 1, 1 });
+    try expectWtf8LossyIteratorSlices(bytes, &.{ 3, 3 });
 
     iter = view.iterator();
     try testing.expectEqualStrings(prefixAfterNLossyCps(w8dfa, bytes, 2), iter.peek(2));
