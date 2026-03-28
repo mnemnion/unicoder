@@ -410,7 +410,6 @@ pub const utf16 = struct {
     pub fn calcUtf8Len(utf16le: []const u16) Utf16LeIterator.NextCodepointError!usize {
         return calcUtf8LenImpl(utf16le);
     }
-
 };
 
 /// Operations onto, and out of, the WTF-16 encoding.
@@ -459,7 +458,6 @@ pub const wtf16 = struct {
     pub fn calcWtf8Len(wtf16le: []const u16) usize {
         return calcWtf8LenImpl(wtf16le);
     }
-
 };
 
 const utf8_lossy = struct {
@@ -493,16 +491,12 @@ const utf8_lossy = struct {
     }
 
     /// Return whether `slice` is valid UTF-8.
-    pub fn validate(slice: []const u8) bool {
-        return validateUtf8(slice);
-    }
+    pub const validate = utf8.validate;
 
     /// Return whether `slice` is valid UTF-8.
     /// On success, `cursor` is advanced to `slice.len`. On failure,
     /// it points to the first rejected byte.
-    pub fn validateCursor(slice: []const u8, cursor: *usize) bool {
-        return validateUtf8Cursor(slice, cursor);
-    }
+    pub const validateCursor = utf8.validateCursor;
 
     /// Count the number of codepoints emitted by lossy UTF-8 decoding.
     pub fn countCodepoints(slice: []const u8) usize {
@@ -563,16 +557,12 @@ const wtf8_lossy = struct {
     }
 
     /// Return whether `slice` is valid WTF-8.
-    pub fn validate(slice: []const u8) bool {
-        return validateWtf8(slice);
-    }
+    pub const validate = wtf8.validate;
 
     /// Return whether `slice` is valid WTF-8.
     /// On success, `cursor` is advanced to `slice.len`. On failure,
     /// it points to the first rejected byte.
-    pub fn validateCursor(slice: []const u8, cursor: *usize) bool {
-        return validateWtf8Cursor(slice, cursor);
-    }
+    pub const validateCursor = wtf8.validateCursor;
 
     /// Count the number of codepoints emitted by lossy WTF-8 decoding.
     pub fn countCodepoints(slice: []const u8) usize {
@@ -636,16 +626,12 @@ const utf8_assume_valid = struct {
     }
 
     /// Return whether `slice` is valid UTF-8.
-    pub fn validate(slice: []const u8) bool {
-        return validateUtf8(slice);
-    }
+    pub const validate = utf8.validate;
 
     /// Return whether `slice` is valid UTF-8.
     /// On success, `cursor` is advanced to `slice.len`. On failure,
     /// it points to the first rejected byte.
-    pub fn validateCursor(slice: []const u8, cursor: *usize) bool {
-        return validateUtf8Cursor(slice, cursor);
-    }
+    pub const validateCursor = utf8.validateCursor;
 
     /// Count the number of UTF-8 codepoints in `slice`.
     /// Assumes that `slice` is already valid UTF-8.
@@ -713,16 +699,12 @@ const wtf8_assume_valid = struct {
     }
 
     /// Return whether `slice` is valid WTF-8.
-    pub fn validate(slice: []const u8) bool {
-        return validateWtf8(slice);
-    }
+    pub const validate = wtf8.validate;
 
     /// Return whether `slice` is valid WTF-8.
     /// On success, `cursor` is advanced to `slice.len`. On failure,
     /// it points to the first rejected byte.
-    pub fn validateCursor(slice: []const u8, cursor: *usize) bool {
-        return validateWtf8Cursor(slice, cursor);
-    }
+    pub const validateCursor = wtf8.validateCursor;
 
     /// Count the number of WTF-8 codepoints in `slice`.
     /// Assumes that `slice` is already valid WTF-8.
