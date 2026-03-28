@@ -73,6 +73,7 @@ const UTF_REJECT = 12;
 
 const ErrorStrategyKind = enum {
     exact,
+    lossy,
 };
 
 const Xf8Kind = enum {
@@ -81,9 +82,19 @@ const Xf8Kind = enum {
 };
 
 pub const utf8 = struct {
+    /// Error returned when invalid Unicode is encountered.
     pub const Error = error{InvalidUtf8};
-    pub const ErrorStrategy = ErrorStrategyKind;
+
+    /// A "view" into a Utf8 string.  Comes in several kinds.
     pub const Utf8View = Xf8View(.utf8);
+
+    /// The strategy for error handling of a given Utf8View.
+    pub const ErrorStrategy = ErrorStrategyKind;
+
+    /// The "lossy" version of the library.  Same functionality
+    /// as the base, but errors are handled using Substitution of
+    /// Maximal Subparts, returning U+FFD for the offending region.
+    pub const lossy = utf8_lossy;
 
     /// Wrap a byte slice as a UTF-8 view specialized to the selected error strategy.
     pub fn iterator(slice: []const u8, comptime strategy: ErrorStrategy) Utf8View(strategy) {
@@ -154,9 +165,19 @@ pub const utf8 = struct {
 };
 
 pub const wtf8 = struct {
+    /// Error returned when invalid Unicode is encountered.
     pub const Error = error{InvalidWtf8};
-    pub const ErrorStrategy = ErrorStrategyKind;
+
+    /// A "view" into a Wtf8 string.  Comes in several kinds.
     pub const Wtf8View = Xf8View(.wtf8);
+
+    /// The strategy for error handling of a given Wtf8View.
+    pub const ErrorStrategy = ErrorStrategyKind;
+
+    /// The "lossy" version of the library.  Same functionality
+    /// as the base, but errors are handled using Substitution of
+    /// Maximal Subparts, returning U+FFD for the offending region.
+    pub const lossy = wtf8_lossy;
 
     /// Wrap a byte slice as a WTF-8 view specialized to the selected error strategy.
     pub fn iterator(slice: []const u8, comptime strategy: ErrorStrategy) Wtf8View(strategy) {
@@ -239,6 +260,94 @@ pub const wtf8 = struct {
     }
 };
 
+const utf8_lossy = struct {
+    /// Decode the codepoint at `slice[0]`, substituting U+FFFD for malformed input.
+    /// `slice.len` must not be `0`.
+    pub fn decode(slice: []const u8) u21 {
+        var cursor: usize = 0;
+        return decodeCursor(slice, &cursor);
+    }
+
+    /// Decode the codepoint at `slice[cursor.*]`, substituting U+FFFD for malformed input.
+    /// The cursor advances by the consumed maximal subpart.
+    pub fn decodeCursor(slice: []const u8, cursor: *usize) u21 {
+        return decodeAnyLossyRuneCursor(u8dfa, st_dfa, c_mask, slice, cursor);
+    }
+
+    /// Count the number of codepoints emitted by lossy UTF-8 decoding.
+    pub fn countCodepoints(slice: []const u8) usize {
+        return countAnyLossyCodepoints(u8dfa, slice);
+    }
+
+    /// Transcode UTF-8 source into UTF-16LE destination, substituting U+FFFD for malformed input.
+    pub fn toUtf16Le(utf_16: []u16, utf_8: []const u8) usize {
+        var i_8: usize = 0;
+        var i_16: usize = 0;
+        return xtf8LossyToXtf16(true, u8dfa, st_dfa, c_mask, utf_16, utf_8, &i_16, &i_8);
+    }
+
+    /// Transcode UTF-8 source into UTF-16BE destination, substituting U+FFFD for malformed input.
+    pub fn toUtf16Be(utf_16: []u16, utf_8: []const u8) usize {
+        var i_8: usize = 0;
+        var i_16: usize = 0;
+        return xtf8LossyToXtf16(false, u8dfa, st_dfa, c_mask, utf_16, utf_8, &i_16, &i_8);
+    }
+
+    /// Transcode UTF-8 source into UTF-16LE destination, substituting U+FFFD for malformed input.
+    pub fn toUtf16LeCursor(utf_16: []u16, utf_8: []const u8, i_16: *usize, i_8: *usize) void {
+        _ = xtf8LossyToXtf16(true, u8dfa, st_dfa, c_mask, utf_16, utf_8, i_16, i_8);
+    }
+
+    /// Transcode UTF-8 source into UTF-16BE destination, substituting U+FFFD for malformed input.
+    pub fn toUtf16BeCursor(utf_16: []u16, utf_8: []const u8, i_16: *usize, i_8: *usize) void {
+        _ = xtf8LossyToXtf16(false, u8dfa, st_dfa, c_mask, utf_16, utf_8, i_16, i_8);
+    }
+};
+
+const wtf8_lossy = struct {
+    /// Decode the codepoint at `slice[0]`, substituting U+FFFD for malformed input.
+    /// `slice.len` must not be `0`.
+    pub fn decode(slice: []const u8) u21 {
+        var cursor: usize = 0;
+        return decodeCursor(slice, &cursor);
+    }
+
+    /// Decode the codepoint at `slice[cursor.*]`, substituting U+FFFD for malformed input.
+    /// The cursor advances by the consumed maximal subpart.
+    pub fn decodeCursor(slice: []const u8, cursor: *usize) u21 {
+        return decodeAnyLossyRuneCursor(w8dfa, st_dfa, c_mask, slice, cursor);
+    }
+
+    /// Count the number of codepoints emitted by lossy WTF-8 decoding.
+    pub fn countCodepoints(slice: []const u8) usize {
+        return countAnyLossyCodepoints(w8dfa, slice);
+    }
+
+    /// Transcode WTF-8 source into WTF-16LE destination, substituting U+FFFD for malformed input.
+    pub fn toWtf16Le(wtf_16: []u16, wtf_8: []const u8) usize {
+        var i_8: usize = 0;
+        var i_16: usize = 0;
+        return xtf8LossyToXtf16(true, w8dfa, st_dfa, c_mask, wtf_16, wtf_8, &i_16, &i_8);
+    }
+
+    /// Transcode WTF-8 source into WTF-16BE destination, substituting U+FFFD for malformed input.
+    pub fn toWtf16Be(wtf_16: []u16, wtf_8: []const u8) usize {
+        var i_8: usize = 0;
+        var i_16: usize = 0;
+        return xtf8LossyToXtf16(false, w8dfa, st_dfa, c_mask, wtf_16, wtf_8, &i_16, &i_8);
+    }
+
+    /// Transcode WTF-8 source into WTF-16LE destination, substituting U+FFFD for malformed input.
+    pub fn toWtf16LeCursor(wtf_16: []u16, wtf_8: []const u8, i_16: *usize, i_8: *usize) void {
+        _ = xtf8LossyToXtf16(true, w8dfa, st_dfa, c_mask, wtf_16, wtf_8, i_16, i_8);
+    }
+
+    /// Transcode WTF-8 source into WTF-16BE destination, substituting U+FFFD for malformed input.
+    pub fn toWtf16BeCursor(wtf_16: []u16, wtf_8: []const u8, i_16: *usize, i_8: *usize) void {
+        _ = xtf8LossyToXtf16(false, w8dfa, st_dfa, c_mask, wtf_16, wtf_8, i_16, i_8);
+    }
+};
+
 fn Xf8View(comptime xf8_kind: Xf8Kind) fn (comptime ErrorStrategyKind) type {
     return struct {
         fn specialize(comptime strategy: ErrorStrategyKind) type {
@@ -268,6 +377,7 @@ fn Xf8ViewImpl(comptime xf8_kind: Xf8Kind, comptime strategy: ErrorStrategyKind)
         pub fn Iterator() type {
             return switch (strategy) {
                 .exact => ExactCodepointIteratorImpl(byte_dfa, invalid_error),
+                .lossy => LossyCodepointIteratorImpl(byte_dfa),
             };
         }
 
@@ -356,6 +466,80 @@ fn decodeAnyRuneCursor(
     return @intCast(rune);
 }
 
+fn decodeAnyLossyRuneCursor(
+    cu_dfa: anytype,
+    state_dfa: anytype,
+    class_mask: anytype,
+    slice: []const u8,
+    cursor: *usize,
+) u21 {
+    assert(cursor.* < slice.len);
+
+    const this_off = cursor.*;
+    cursor.* += 1;
+
+    var byte = slice[this_off];
+    if (byte < 0x80) return byte;
+
+    var class: u4 = @intCast(cu_dfa[byte]);
+    var st: u32 = state_dfa[class];
+    if (st == UTF_REJECT or cursor.* == slice.len) {
+        @branchHint(.cold);
+        return 0xfffd;
+    }
+    var rune: u32 = byte & class_mask[class];
+    byte = slice[cursor.*];
+    class = @intCast(cu_dfa[byte]);
+    st = state_dfa[st + class];
+    rune = (byte & 0x3f) | (rune << 6);
+    cursor.* += 1;
+    if (st == UTF_ACCEPT) {
+        return @intCast(rune);
+    }
+    if (st == UTF_REJECT or cursor.* == slice.len) {
+        @branchHint(.cold);
+        cursor.* -= 1;
+        return 0xfffd;
+    }
+
+    byte = slice[cursor.*];
+    class = @intCast(cu_dfa[byte]);
+    st = state_dfa[st + class];
+    rune = (byte & 0x3f) | (rune << 6);
+    cursor.* += 1;
+    if (st == UTF_ACCEPT) {
+        return @intCast(rune);
+    }
+    if (st == UTF_REJECT or cursor.* == slice.len) {
+        @branchHint(.cold);
+        if (state_dfa[@intCast(cu_dfa[byte])] == UTF_REJECT) {
+            cursor.* -= 2;
+            return 0xfffd;
+        } else {
+            cursor.* -= 1;
+            return 0xfffd;
+        }
+    }
+
+    byte = slice[cursor.*];
+    class = @intCast(cu_dfa[byte]);
+    st = state_dfa[st + class];
+    rune = (byte & 0x3f) | (rune << 6);
+    cursor.* += 1;
+    if (st == UTF_REJECT) {
+        @branchHint(.cold);
+        if (state_dfa[@intCast(cu_dfa[byte])] == UTF_REJECT) {
+            cursor.* -= 3;
+            return 0xfffd;
+        } else {
+            cursor.* -= 1;
+            return 0xfffd;
+        }
+    }
+    assert(st == UTF_ACCEPT);
+    return @intCast(rune);
+}
+
 fn ExactCodepointIteratorImpl(comptime cu_dfa: anytype, comptime invalid_error: anytype) type {
     return struct {
         bytes: []const u8,
@@ -392,6 +576,47 @@ fn ExactCodepointIteratorImpl(comptime cu_dfa: anytype, comptime invalid_error: 
             return iter.bytes[iter.i..i];
         }
     };
+}
+
+fn LossyCodepointIteratorImpl(comptime cu_dfa: anytype) type {
+    return struct {
+        bytes: []const u8,
+        i: usize = 0,
+
+        /// Return the next codepoint, substituting U+FFFD for malformed input.
+        pub fn nextCodepoint(iter: *@This()) ?u21 {
+            if (iter.i >= iter.bytes.len) return null;
+            return decodeAnyLossyRuneCursor(cu_dfa, st_dfa, c_mask, iter.bytes, &iter.i);
+        }
+
+        /// Return the byte slice consumed for the next codepoint or maximal subpart.
+        pub fn nextCodepointSlice(iter: *@This()) ?[]const u8 {
+            if (iter.i >= iter.bytes.len) return null;
+            const start = iter.i;
+            _ = decodeAnyLossyRuneCursor(cu_dfa, st_dfa, c_mask, iter.bytes, &iter.i);
+            return iter.bytes[start..iter.i];
+        }
+
+        /// Look ahead at the next `n` codepoints without advancing the iterator.
+        pub fn peek(iter: *@This(), n: usize) []const u8 {
+            var remaining = n;
+            var i = iter.i;
+            while (remaining > 0 and i < iter.bytes.len) : (remaining -= 1) {
+                _ = decodeAnyLossyRuneCursor(cu_dfa, st_dfa, c_mask, iter.bytes, &i);
+            }
+            return iter.bytes[iter.i..i];
+        }
+    };
+}
+
+fn countAnyLossyCodepoints(cu_dfa: anytype, slice: []const u8) usize {
+    var cursor: usize = 0;
+    var count: usize = 0;
+    while (cursor < slice.len) {
+        _ = decodeAnyLossyRuneCursor(cu_dfa, st_dfa, c_mask, slice, &cursor);
+        count += 1;
+    }
+    return count;
 }
 
 fn countRunes(slice: []const u8) !usize {
@@ -675,6 +900,40 @@ fn xtf8ToXtf16(
     return i_16.*;
 }
 
+fn xtf8LossyToXtf16(
+    comptime little_endian: bool,
+    cu_dfa: anytype,
+    state_dfa: anytype,
+    class_mask: anytype,
+    utf_16: []u16,
+    utf_8: []const u8,
+    i_16: *usize,
+    i_8: *usize,
+) usize {
+    _ = state_dfa;
+    _ = class_mask;
+    const nativeToEndian = if (little_endian)
+        std.mem.nativeToLittle
+    else
+        std.mem.nativeToBig;
+
+    while (i_8.* < utf_8.len) {
+        const rune = decodeAnyLossyRuneCursor(cu_dfa, st_dfa, c_mask, utf_8, i_8);
+        if (rune < 0x10000) {
+            utf_16[i_16.*] = nativeToEndian(u16, @intCast(rune));
+            i_16.* += 1;
+        } else {
+            const high = @as(u16, @intCast((rune - 0x10000) >> 10)) + 0xD800;
+            const low = @as(u16, @intCast(rune & 0x3FF)) + 0xDC00;
+            utf_16[i_16.*] = nativeToEndian(u16, high);
+            i_16.* += 1;
+            utf_16[i_16.*] = nativeToEndian(u16, low);
+            i_16.* += 1;
+        }
+    }
+    return i_16.*;
+}
+
 fn expectBigEndianUtf16(expected_native: []const u16, actual_big_endian: []const u16) !void {
     try testing.expectEqual(expected_native.len, actual_big_endian.len);
     for (expected_native, actual_big_endian) |expected, actual| {
@@ -910,6 +1169,57 @@ fn prefixAfterNCodepoints(slice: []const u8, n: usize) ![]const u8 {
     return slice[0..cursor];
 }
 
+fn prefixAfterNLossyCodepoints(cu_dfa: anytype, slice: []const u8, n: usize) []const u8 {
+    var cursor: usize = 0;
+    var remaining = n;
+    while (remaining > 0 and cursor < slice.len) : (remaining -= 1) {
+        _ = decodeAnyLossyRuneCursor(cu_dfa, st_dfa, c_mask, slice, &cursor);
+    }
+    return slice[0..cursor];
+}
+
+fn expectUtf8LossyDecode(bytes: []const u8, expected_codepoints: []const u21, expected_lens: []const usize) !void {
+    try testing.expectEqual(expected_codepoints.len, expected_lens.len);
+    var cursor: usize = 0;
+    for (expected_codepoints, expected_lens) |expected_codepoint, expected_len| {
+        const start = cursor;
+        try testing.expectEqual(expected_codepoint, utf8.lossy.decodeCursor(bytes, &cursor));
+        try testing.expectEqual(expected_len, cursor - start);
+    }
+    try testing.expectEqual(bytes.len, cursor);
+}
+
+fn expectWtf8LossyDecode(bytes: []const u8, expected_codepoints: []const u21, expected_lens: []const usize) !void {
+    try testing.expectEqual(expected_codepoints.len, expected_lens.len);
+    var cursor: usize = 0;
+    for (expected_codepoints, expected_lens) |expected_codepoint, expected_len| {
+        const start = cursor;
+        try testing.expectEqual(expected_codepoint, wtf8.lossy.decodeCursor(bytes, &cursor));
+        try testing.expectEqual(expected_len, cursor - start);
+    }
+    try testing.expectEqual(bytes.len, cursor);
+}
+
+fn expectUtf8LossyIteratorSlices(bytes: []const u8, expected_lens: []const usize) !void {
+    const view = utf8.iterator(bytes, .lossy);
+    var iter = view.iterator();
+    for (expected_lens) |expected_len| {
+        const slice = iter.nextCodepointSlice().?;
+        try testing.expectEqual(expected_len, slice.len);
+    }
+    try testing.expectEqual(@as(?[]const u8, null), iter.nextCodepointSlice());
+}
+
+fn expectWtf8LossyIteratorSlices(bytes: []const u8, expected_lens: []const usize) !void {
+    const view = wtf8.iterator(bytes, .lossy);
+    var iter = view.iterator();
+    for (expected_lens) |expected_len| {
+        const slice = iter.nextCodepointSlice().?;
+        try testing.expectEqual(expected_len, slice.len);
+    }
+    try testing.expectEqual(@as(?[]const u8, null), iter.nextCodepointSlice());
+}
+
 test "Utf8View iterator exact nextCodepoint matches decodeCursor" {
     try testUtf8ViewNextCodepoint(ascii);
     try testUtf8ViewNextCodepoint(greek);
@@ -1000,4 +1310,108 @@ test "Wtf8View iterator exact reports malformed input as InvalidWtf8" {
         try testing.expectError(error.InvalidWtf8, iter.peek(1));
         try testing.expectEqual(@as(usize, 0), iter.i);
     }
+}
+
+test "utf8.lossy decode preserves valid input" {
+    try testing.expectEqual(@as(u21, 'a'), utf8.lossy.decode("abc"));
+    try testing.expectEqual(@as(u21, 0x03B1), utf8.lossy.decode("α"));
+    try testing.expectEqual(@as(u21, 0x1F913), utf8.lossy.decode("🤓"));
+}
+
+test "utf8.lossy overlongs use replacement characters" {
+    try expectUtf8LossyDecode("\xc0\xaf", &.{ 0xfffd, 0xfffd }, &.{ 1, 1 });
+    try expectUtf8LossyDecode("\xe0\x80\xaf", &.{ 0xfffd, 0xfffd, 0xfffd }, &.{ 1, 1, 1 });
+    try expectUtf8LossyDecode("\xf0\x80\x80\xaf", &.{ 0xfffd, 0xfffd, 0xfffd, 0xfffd }, &.{ 1, 1, 1, 1 });
+}
+
+test "utf8.lossy surrogate-form sequences use replacement characters" {
+    try expectUtf8LossyDecode("\xed\xad\xbf", &.{ 0xfffd, 0xfffd, 0xfffd }, &.{ 1, 1, 1 });
+}
+
+test "utf8.lossy truncation follows maximal subparts" {
+    const bytes = "\xe1\x80\xe2\xf0\x91\x92\xf1\xbf\x41";
+    try expectUtf8LossyDecode(bytes, &.{ 0xfffd, 0xfffd, 0xfffd, 0xfffd, 0x41 }, &.{ 2, 1, 3, 2, 1 });
+}
+
+test "utf8.lossy countCodepoints counts replacements" {
+    try testing.expectEqual(@as(usize, 4), utf8.lossy.countCodepoints(mixed));
+    try testing.expectEqual(@as(usize, 2), utf8.lossy.countCodepoints("\xc0\xaf"));
+    try testing.expectEqual(@as(usize, 5), utf8.lossy.countCodepoints("\xe1\x80\xe2\xf0\x91\x92\xf1\xbf\x41"));
+}
+
+test "utf8.lossy transcoding emits replacement characters" {
+    const bytes = "\xe1\x80\xe2\xf0\x91\x92\xf1\xbf\x41";
+    const expected_native = [_]u16{ 0xfffd, 0xfffd, 0xfffd, 0xfffd, 0x41 };
+    var out_le: [expected_native.len]u16 = undefined;
+    var out_be: [expected_native.len]u16 = undefined;
+
+    try testing.expectEqual(expected_native.len, utf8.lossy.toUtf16Le(&out_le, bytes));
+    try testing.expectEqualSlices(u16, &expected_native, &out_le);
+    try testing.expectEqual(expected_native.len, utf8.lossy.toUtf16Be(&out_be, bytes));
+    try expectBigEndianUtf16(&expected_native, &out_be);
+
+    var i_16: usize = 0;
+    var i_8: usize = 0;
+    utf8.lossy.toUtf16LeCursor(&out_le, bytes, &i_16, &i_8);
+    try testing.expectEqual(expected_native.len, i_16);
+    try testing.expectEqual(bytes.len, i_8);
+}
+
+test "Utf8View iterator lossy yields replacements and maximal subpart slices" {
+    const bytes = "\xe1\x80\xe2\xf0\x91\x92\xf1\xbf\x41";
+    const view = utf8.iterator(bytes, .lossy);
+    var iter = view.iterator();
+
+    try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
+    try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
+    try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
+    try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
+    try testing.expectEqual(@as(u21, 0x41), iter.nextCodepoint().?);
+    try testing.expectEqual(@as(?u21, null), iter.nextCodepoint());
+
+    try expectUtf8LossyIteratorSlices(bytes, &.{ 2, 1, 3, 2, 1 });
+
+    iter = view.iterator();
+    try testing.expectEqualStrings(prefixAfterNLossyCodepoints(u8dfa, bytes, 3), iter.peek(3));
+    try testing.expectEqual(@as(usize, 0), iter.i);
+}
+
+test "wtf8.lossy preserves valid input and replaces malformed input" {
+    try testing.expectEqual(@as(u21, 0x03B1), wtf8.lossy.decode("α"));
+    try expectWtf8LossyDecode("\xc0\xaf", &.{ 0xfffd, 0xfffd }, &.{ 1, 1 });
+}
+
+test "wtf8.lossy countCodepoints and transcode replace malformed input" {
+    const bytes = "\xc0\xaf";
+    const expected_native = [_]u16{ 0xfffd, 0xfffd };
+    var out_le: [expected_native.len]u16 = undefined;
+    var out_be: [expected_native.len]u16 = undefined;
+
+    try testing.expectEqual(@as(usize, 2), wtf8.lossy.countCodepoints(bytes));
+    try testing.expectEqual(expected_native.len, wtf8.lossy.toWtf16Le(&out_le, bytes));
+    try testing.expectEqualSlices(u16, &expected_native, &out_le);
+    try testing.expectEqual(expected_native.len, wtf8.lossy.toWtf16Be(&out_be, bytes));
+    try expectBigEndianUtf16(&expected_native, &out_be);
+
+    var i_16: usize = 0;
+    var i_8: usize = 0;
+    wtf8.lossy.toWtf16LeCursor(&out_le, bytes, &i_16, &i_8);
+    try testing.expectEqual(expected_native.len, i_16);
+    try testing.expectEqual(bytes.len, i_8);
+}
+
+test "Wtf8View iterator lossy yields replacements without errors" {
+    const bytes = "\xc0\xaf";
+    const view = wtf8.iterator(bytes, .lossy);
+    var iter = view.iterator();
+
+    try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
+    try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
+    try testing.expectEqual(@as(?u21, null), iter.nextCodepoint());
+
+    try expectWtf8LossyIteratorSlices(bytes, &.{ 1, 1 });
+
+    iter = view.iterator();
+    try testing.expectEqualStrings(prefixAfterNLossyCodepoints(w8dfa, bytes, 2), iter.peek(2));
+    try testing.expectEqual(@as(usize, 0), iter.i);
 }
