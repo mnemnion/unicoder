@@ -81,9 +81,15 @@ const Surrogates = enum {
     allow_surrogate,
 };
 
+/// Kind of error strategy used by an iterator.  These
+/// match the libraries, with `exact` as the default
+/// strategy.
 const ErrorStrategyKind = enum {
+    /// Return an error when errors are encountered.
     exact,
+    /// Replace the maximal subpart of errors with U+FFFD.
     lossy,
+    /// Errors?  What errors.  It's encoded right, I promise.
     assume_valid,
 };
 
@@ -92,7 +98,7 @@ const Xf8Kind = enum {
     wtf8,
 };
 
-/// Operations on Unicode codepoints, specialized by encoding where needed.
+/// Operations on Unicode codepoints.
 pub const codepoint = struct {
     /// Error returned when a codepoint cannot be encoded as UTF-8.
     pub const Utf8EncodeError = error{ Utf8CannotEncodeSurrogateHalf, CodepointTooLarge };
@@ -180,7 +186,7 @@ pub const utf8 = struct {
     /// The "valid" version of the library.  Same functionality
     /// as the base, but assumes inputs are already valid UTF-8.
     /// Bad things will reliably happen if this assumption is not
-    /// correct.
+    /// correct.  See: `utf8.validate`.
     pub const valid = utf8_assume_valid;
 
     /// Wrap a byte slice as a UTF-8 view specialized to the selected error strategy.
@@ -279,7 +285,7 @@ pub const wtf8 = struct {
     /// The "valid" version of the library.  Same functionality
     /// as the base, but assumes inputs are already valid WTF-8.
     /// Bad things will reliably happen if this assumption is not
-    /// correct.
+    /// correct.  See: `wtf8.validate`.
     pub const valid = wtf8_assume_valid;
 
     /// Wrap a byte slice as a WTF-8 view specialized to the selected error strategy.
@@ -461,7 +467,7 @@ pub const wtf16 = struct {
 };
 
 const utf8_lossy = struct {
-    /// A "view" into a Utf8 string using lossy error handling.
+    /// A "view" into a UTF-8 string using lossy error handling.
     pub const Utf8View = utf8.Utf8View(.lossy);
 
     /// The strategy for error handling of a given Utf8View.
@@ -485,7 +491,7 @@ const utf8_lossy = struct {
     }
 
     /// Decode the codepoint at `slice[cursor.*]`, substituting U+FFFD for malformed input.
-    /// The cursor advances by the consumed maximal subpart.
+    /// The cursor advances to the next possible codepoint, or slice.len.
     pub fn decodeCursor(slice: []const u8, cursor: *usize) u21 {
         return decodeAnyLossyXtf8Cursor(u8dfa, st_dfa, c_mask, slice, cursor);
     }
@@ -551,7 +557,7 @@ const wtf8_lossy = struct {
     }
 
     /// Decode the codepoint at `slice[cursor.*]`, substituting U+FFFD for malformed input.
-    /// The cursor advances by the consumed maximal subpart.
+    /// The cursor advances to the next possible codepoint, or slice.len.
     pub fn decodeCursor(slice: []const u8, cursor: *usize) u21 {
         return decodeAnyLossyXtf8Cursor(w8dfa, st_dfa, c_mask, slice, cursor);
     }
