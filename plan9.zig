@@ -49,84 +49,144 @@ pub const UTF_REJECT: u8 = @intFromEnum(State.reject);
 /// Error returned when the input is not well-formed Plan 9 UTF-8.
 pub const DecodeError = error{InvalidUtf8};
 
-/// Byte transitions: value to class.
-const byte_class = initByteClass();
+pub const Dfa = struct {
+    byte_class: [256]u8 = initByteClass(),
+    class_mask: [CLASS_COUNT]u8 = .{
+        0xff,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0b0001_1111,
+        0,
+        0b0000_1111,
+        0b0000_1111,
+        0b0000_0111,
+        0b0000_0111,
+        0b0000_0011,
+        0b0000_0011,
+        0b0000_0001,
+        0b0000_0001,
+    },
+    state_dfa: [STATE_COUNT * CLASS_COUNT]u8 = initStateDfa(),
 
-/// State masks.
-const class_mask: [CLASS_COUNT]u8 = .{
-    0xff,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0b0001_1111,
-    0,
-    0b0000_1111,
-    0b0000_1111,
-    0b0000_0111,
-    0b0000_0111,
-    0b0000_0011,
-    0b0000_0011,
-    0b0000_0001,
-    0b0000_0001,
+    pub fn decode(table: Dfa, state: *u8, codepoint: *u32, byte: u8) u8 {
+        const class = table.byte_class[byte];
+
+        if (state.* == UTF_ACCEPT) {
+            codepoint.* = byte & table.class_mask[class];
+        } else {
+            codepoint.* = (codepoint.* << 6) | (byte & 0x3f);
+        }
+
+        state.* = table.state_dfa[@as(usize, state.*) * CLASS_COUNT + class];
+        return state.*;
+    }
+
+    pub fn decodeCursor(table: Dfa, bytes: []const u8, cursor: *usize) DecodeError!u32 {
+        assert(cursor.* < bytes.len);
+
+        var state: u8 = UTF_ACCEPT;
+        var codepoint: u32 = 0;
+        var i = cursor.*;
+
+        while (i < bytes.len) : (i += 1) {
+            switch (table.decode(&state, &codepoint, bytes[i])) {
+                UTF_ACCEPT => {
+                    cursor.* = i + 1;
+                    return codepoint;
+                },
+                UTF_REJECT => {
+                    cursor.* = i;
+                    return error.InvalidUtf8;
+                },
+                else => {},
+            }
+        }
+
+        cursor.* = bytes.len;
+        return error.InvalidUtf8;
+    }
+
+    pub fn validate(table: Dfa, bytes: []const u8) bool {
+        var state: u8 = UTF_ACCEPT;
+        var codepoint: u32 = 0;
+
+        for (bytes) |byte| {
+            _ = table.decode(&state, &codepoint, byte);
+            if (state == UTF_REJECT) return false;
+        }
+
+        return state == UTF_ACCEPT;
+    }
+
+    pub fn dump(table: Dfa) void {
+        std.debug.print("{f}", .{table});
+    }
+
+    pub fn format(table: Dfa, writer: *std.io.Writer) std.io.Writer.Error!void {
+        try writer.writeAll("// zig fmt: off\n\n");
+        try writer.writeAll("const byte_class: [256]u8 = .{\n");
+        try formatRows(writer, &table.byte_class, 32, 0x00);
+        try writer.writeAll("};\n\n");
+
+        try writer.writeAll("const class_mask: [16]u8 = .{\n");
+        try formatPerLine(writer, &table.class_mask);
+        try writer.writeAll("};\n\n");
+
+        try writer.writeAll("const state_dfa: [176]u8 = .{\n");
+        try formatRows(writer, &table.state_dfa, CLASS_COUNT, 0);
+        try writer.writeAll("};\n\n");
+        try writer.writeAll("// zig fmt: on\n");
+    }
+
+    fn formatRows(writer: *std.io.Writer, values: []const u8, row_len: usize, base_offset: usize) std.io.Writer.Error!void {
+        var row_start: usize = 0;
+        while (row_start < values.len) : (row_start += row_len) {
+            try writer.writeAll("    ");
+
+            var i = row_start;
+            while (i < row_start + row_len and i < values.len) : (i += 1) {
+                if (i != row_start) try writer.writeAll(",");
+                try writer.print("{d}", .{values[i]});
+            }
+
+            if (row_len == 32) {
+                const row_end = row_start + row_len - 1;
+                try writer.print(", // {x:0>2}..{x:0>2}\n", .{
+                    base_offset + row_start,
+                    base_offset + row_end,
+                });
+            } else {
+                try writer.writeAll(",\n");
+            }
+        }
+    }
+
+    fn formatPerLine(writer: *std.io.Writer, values: []const u8) std.io.Writer.Error!void {
+        for (values) |value| {
+            try writer.print("    {d},\n", .{value});
+        }
+    }
 };
 
-/// State transition: state + class = new state.
-const state_dfa = initStateDfa();
+pub const dfa = Dfa{};
 
 /// Consume one byte of Plan 9 UTF-8.
 pub fn decode(state: *u8, codepoint: *u32, byte: u8) u8 {
-    const class = byte_class[byte];
-
-    if (state.* == UTF_ACCEPT) {
-        codepoint.* = byte & class_mask[class];
-    } else {
-        codepoint.* = (codepoint.* << 6) | (byte & 0x3f);
-    }
-
-    state.* = state_dfa[@as(usize, state.*) * CLASS_COUNT + class];
-    return state.*;
+    return dfa.decode(state, codepoint, byte);
 }
 
 /// Decode one codepoint from `bytes[cursor.*..]`, advancing `cursor` on
 /// success.
 pub fn decodeCursor(bytes: []const u8, cursor: *usize) DecodeError!u32 {
-    assert(cursor.* < bytes.len);
-
-    var state: u8 = UTF_ACCEPT;
-    var codepoint: u32 = 0;
-    var i = cursor.*;
-
-    while (i < bytes.len) : (i += 1) {
-        switch (decode(&state, &codepoint, bytes[i])) {
-            UTF_ACCEPT => {
-                cursor.* = i + 1;
-                return codepoint;
-            },
-            UTF_REJECT => {
-                cursor.* = i;
-                return error.InvalidUtf8;
-            },
-            else => {},
-        }
-    }
-
-    cursor.* = bytes.len;
-    return error.InvalidUtf8;
+    return dfa.decodeCursor(bytes, cursor);
 }
 
 /// Return whether `bytes` is well-formed Plan 9 UTF-8.
 pub fn validate(bytes: []const u8) bool {
-    var state: u8 = UTF_ACCEPT;
-    var codepoint: u32 = 0;
-
-    for (bytes) |byte| {
-        _ = decode(&state, &codepoint, byte);
-        if (state == UTF_REJECT) return false;
-    }
-
-    return state == UTF_ACCEPT;
+    return dfa.validate(bytes);
 }
 
 fn initByteClass() [256]u8 {
@@ -282,6 +342,18 @@ test "validate rejects truncation and impossible starters" {
     try expectInvalid(&.{ 0xC1, 0xBF });
     try expectInvalid(&.{0xFE});
     try expectInvalid(&.{0xFF});
+}
+
+test "dfa format prints the raw tables" {
+    var list = try std.ArrayList(u8).initCapacity(testing.allocator, 0);
+    defer list.deinit(testing.allocator);
+
+    try std.fmt.format(list.writer(testing.allocator), "{f}", .{dfa});
+
+    try testing.expect(std.mem.startsWith(u8, list.items, "// zig fmt: off\n\nconst byte_class"));
+    try testing.expect(std.mem.indexOf(u8, list.items, "const class_mask: [16]u8 = .{") != null);
+    try testing.expect(std.mem.indexOf(u8, list.items, "const state_dfa: [176]u8 = .{") != null);
+    std.debug.print("{f}\n", .{dfa});
 }
 
 fn expectDecode(bytes: []const u8, want: u32) !void {
