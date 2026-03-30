@@ -12,6 +12,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const plan9_module = b.createModule(.{
+        .root_source_file = b.path("plan9.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const test_filters = b.option(
         []const []const u8,
         "test-filter",
@@ -23,11 +29,18 @@ pub fn build(b: *std.Build) void {
         .filters = test_filters,
     });
 
+    const plan9_unit_tests = b.addTest(.{
+        .root_module = plan9_module,
+        .filters = test_filters,
+    });
+
     const run_module_unit_tests = b.addRunArtifact(module_unit_tests);
+    const run_plan9_unit_tests = b.addRunArtifact(plan9_unit_tests);
 
     const test_step = b.step("test", "Run unit tests");
 
     test_step.dependOn(&run_module_unit_tests.step);
+    test_step.dependOn(&run_plan9_unit_tests.step);
 
     const run_kcov = b.addSystemCommand(&.{
         "kcov",
