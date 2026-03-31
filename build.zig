@@ -12,7 +12,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const plan9_module = b.createModule(.{
+    const plan9_module = b.addModule("plan9", .{
         .root_source_file = b.path("plan9.zig"),
         .target = target,
         .optimize = optimize,
