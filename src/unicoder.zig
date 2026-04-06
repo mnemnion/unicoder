@@ -98,6 +98,19 @@ const Xf8Kind = enum {
     wtf8,
 };
 
+/// Detailed WTF-8 decoding diagnostics mirrored from `std.unicode`,
+/// plus the framing errors needed by these wrapper helpers.
+pub const Wtf8DiagnoseError = error{
+    Utf8InvalidStartByte,
+    TruncatedInput,
+    Utf8ExpectedContinuation,
+    Utf8OverlongEncoding,
+    Utf8CodepointTooLarge,
+};
+
+/// Detailed UTF-8 decoding diagnostics mirrored from `std.unicode`.
+pub const Utf8DiagnoseError = Wtf8DiagnoseError || error{Utf8EncodesSurrogateHalf};
+
 /// Operations on Unicode codepoints.
 pub const codepoint = struct {
     /// Error returned when a codepoint cannot be encoded as UTF-8.
@@ -226,6 +239,8 @@ pub const utf8 = struct {
         return validateUtf8Cursor(slice, cursor);
     }
 
+    pub const diagnoseError = utfDiagnoseAtIndex;
+
     /// Count the number of UTF-8 codepoints in `slice`.
     pub fn countCodepoints(slice: []const u8) Error!usize {
         return countUtf8(slice);
@@ -327,6 +342,8 @@ pub const wtf8 = struct {
     pub fn validateCursor(slice: []const u8, cursor: *usize) bool {
         return validateWtf8Cursor(slice, cursor);
     }
+
+    pub const diagnoseError = wtfDiagnoseAtIndex;
 
     /// Count the number of WTF-8 codepoints in `slice`.
     pub fn countCodepoints(slice: []const u8) Error!usize {
@@ -504,6 +521,8 @@ const utf8_lossy = struct {
     /// it points to the first rejected byte.
     pub const validateCursor = utf8.validateCursor;
 
+    pub const diagnoseError = utfDiagnoseBeforeIndex;
+
     /// Count the number of codepoints emitted by lossy UTF-8 decoding.
     pub fn countCodepoints(slice: []const u8) usize {
         return countAnyLossyCps(u8dfa, slice);
@@ -569,6 +588,8 @@ const wtf8_lossy = struct {
     /// On success, `cursor` is advanced to `slice.len`. On failure,
     /// it points to the first rejected byte.
     pub const validateCursor = wtf8.validateCursor;
+
+    pub const diagnoseError = wtfDiagnoseBeforeIndex;
 
     /// Count the number of codepoints emitted by lossy WTF-8 decoding.
     pub fn countCodepoints(slice: []const u8) usize {
@@ -909,6 +930,82 @@ const wtf8_valid_to_wtf16 = struct {
     }
 };
 
+/// Diagnose the UTF-8 sequence beginning at `idx` using `std.unicode`.  This
+/// will be the cursor location when the baseline / exact library is used.
+/// Returns any decoding error that `std.unicode` reports. If `idx` does not
+/// index `str`, or if no UTF-8 decoding error is seen at `idx`, returns `void`.
+fn utfDiagnoseAtIndex(str: []const u8, idx: usize) Utf8DiagnoseError!void {
+    if (idx >= str.len) return;
+
+    const cp_len = try std.unicode.utf8ByteSequenceLength(str[idx]);
+    if (idx + cp_len > str.len) return error.TruncatedInput;
+
+    switch (cp_len) {
+        1 => return,
+        2 => _ = try std.unicode.utf8Decode2(str[idx..][0..2].*),
+        3 => _ = try std.unicode.utf8Decode3(str[idx..][0..3].*),
+        4 => _ = try std.unicode.utf8Decode4(str[idx..][0..4].*),
+        else => unreachable,
+    }
+}
+
+/// Diagnose the malformed UTF-8 sequence immediately before `idx`.  This is
+/// intended for lossy cursors, after they have advanced past a malformed
+/// maximal subpart. If no UTF-8 decoding error is found immediately before
+/// `idx`, returns `void`.
+fn utfDiagnoseBeforeIndex(str: []const u8, idx: usize) Utf8DiagnoseError!void {
+    const end = @min(str.len, idx);
+    if (end == 0) return;
+
+    const start = end -| 3;
+    for (start..end) |i| {
+        var cursor = i;
+        _ = utf8.lossy.decodeCursor(str, &cursor);
+        if (cursor != end) continue;
+
+        utfDiagnoseAtIndex(str, i) catch |err| return err;
+        return;
+    }
+}
+
+/// Diagnose the WTF-8 sequence beginning at `idx` using `std.unicode`.  This
+/// will be the cursor location when the baseline / exact library is used.
+/// Returns any decoding error that `std.unicode` reports. If `idx` does not
+/// index `str`, or if no WTF-8 decoding error is seen at `idx`, returns `void`.
+fn wtfDiagnoseAtIndex(str: []const u8, idx: usize) Wtf8DiagnoseError!void {
+    if (idx >= str.len) return;
+
+    const cp_len = try std.unicode.utf8ByteSequenceLength(str[idx]);
+    if (idx + cp_len > str.len) return error.TruncatedInput;
+
+    switch (cp_len) {
+        1 => return,
+        2 => _ = try std.unicode.utf8Decode2(str[idx..][0..2].*),
+        3 => _ = try std.unicode.utf8Decode3AllowSurrogateHalf(str[idx..][0..3].*),
+        4 => _ = try std.unicode.utf8Decode4(str[idx..][0..4].*),
+        else => unreachable,
+    }
+}
+
+/// Diagnose the malformed WTF-8 sequence immediately before `idx`.
+/// This is intended for lossy cursors, after they have advanced past a
+/// malformed maximal subpart. If no WTF-8 decoding error is found immediately
+/// before `idx`, returns `void`.
+fn wtfDiagnoseBeforeIndex(str: []const u8, idx: usize) Wtf8DiagnoseError!void {
+    const end = @min(str.len, idx);
+    if (end == 0) return;
+
+    const start = end -| 3;
+    for (start..end) |i| {
+        var cursor = i;
+        _ = wtf8.lossy.decodeCursor(str, &cursor);
+        if (cursor != end) continue;
+
+        wtfDiagnoseAtIndex(str, i) catch |err| return err;
+        return;
+    }
+}
+
 fn Xf8View(comptime xf8_kind: Xf8Kind) fn (comptime ErrorStrategyKind) type {
     const byte_dfa = switch (xf8_kind) {
         .utf8 => u8dfa,
@@ -918,10 +1015,18 @@ fn Xf8View(comptime xf8_kind: Xf8Kind) fn (comptime ErrorStrategyKind) type {
         .utf8 => error.InvalidUtf8,
         .wtf8 => error.InvalidWtf8,
     };
+    const exact_diagnose = switch (xf8_kind) {
+        .utf8 => utfDiagnoseAtIndex,
+        .wtf8 => wtfDiagnoseAtIndex,
+    };
+    const lossy_diagnose = switch (xf8_kind) {
+        .utf8 => utfDiagnoseBeforeIndex,
+        .wtf8 => wtfDiagnoseBeforeIndex,
+    };
 
     return struct {
         fn view(comptime strategy: ErrorStrategyKind) type {
-            return Xf8ViewImpl(strategy, byte_dfa, invalid_error);
+            return Xf8ViewImpl(strategy, byte_dfa, invalid_error, exact_diagnose, lossy_diagnose);
         }
     }.view;
 }
@@ -930,10 +1035,12 @@ fn Xf8ViewImpl(
     comptime strategy: ErrorStrategyKind,
     comptime byte_dfa: anytype,
     comptime invalid_error: anytype,
+    comptime exact_diagnose: anytype,
+    comptime lossy_diagnose: anytype,
 ) type {
     return switch (strategy) {
-        .exact => ExactCpIteratorImpl(byte_dfa, invalid_error),
-        .lossy => LossyCpIteratorImpl(byte_dfa),
+        .exact => ExactCpIteratorImpl(byte_dfa, invalid_error, exact_diagnose),
+        .lossy => LossyCpIteratorImpl(byte_dfa, lossy_diagnose),
         .assume_valid => AssumeValidCpIteratorImpl(byte_dfa, c_mask),
     };
 }
@@ -1442,7 +1549,7 @@ fn decodeAnyLossyXtf8Cursor(
     return @intCast(cp);
 }
 
-fn ExactCpIteratorImpl(comptime cu_dfa: anytype, comptime invalid_error: anytype) type {
+fn ExactCpIteratorImpl(comptime cu_dfa: anytype, comptime invalid_error: anytype, comptime diagnose_error: anytype) type {
     return struct {
         bytes: []const u8,
         i: usize = 0,
@@ -1481,10 +1588,14 @@ fn ExactCpIteratorImpl(comptime cu_dfa: anytype, comptime invalid_error: anytype
             }
             return iter.bytes[iter.i..i];
         }
+
+        pub fn diagnoseError(iter: *@This()) @TypeOf(diagnose_error("", 0)) {
+            return diagnose_error(iter.bytes, iter.i);
+        }
     };
 }
 
-fn LossyCpIteratorImpl(comptime cu_dfa: anytype) type {
+fn LossyCpIteratorImpl(comptime cu_dfa: anytype, comptime diagnose_error: anytype) type {
     return struct {
         bytes: []const u8,
         i: usize = 0,
@@ -1514,6 +1625,10 @@ fn LossyCpIteratorImpl(comptime cu_dfa: anytype) type {
             const this_i = iter.i;
             defer iter.i = this_i;
             return iter.nextCodepointSlice() orelse return "";
+        }
+
+        pub fn diagnoseError(iter: *@This()) @TypeOf(diagnose_error("", 0)) {
+            return diagnose_error(iter.bytes, iter.i);
         }
     };
 }
@@ -2322,6 +2437,100 @@ test "wtf8 transcoding wrappers remap malformed input to InvalidWtf8" {
     try testing.expectError(error.InvalidWtf8, wtf8.toWtf16LeCursor(&out, invalid, &i_16, &i_8));
     try testing.expectEqual(@as(usize, 0), i_16);
     try testing.expectEqual(@as(usize, 1), i_8);
+}
+
+test "diagnoseAtIndex reports detailed utf8 errors and ignores misses" {
+    try utfDiagnoseAtIndex(mixed, mixed.len);
+    try utfDiagnoseAtIndex(mixed, mixed.len + 4);
+    try utfDiagnoseAtIndex(mixed, 0);
+
+    try testing.expectError(error.Utf8ExpectedContinuation, utfDiagnoseAtIndex("\xf0\x28\x8c\xbc", 0));
+    try testing.expectError(error.TruncatedInput, utfDiagnoseAtIndex("\xf0\x9f\x92", 0));
+    try testing.expectError(error.Utf8InvalidStartByte, utfDiagnoseAtIndex("a\x80b", 1));
+}
+
+test "diagnoseBeforeIndex synchronizes from lossy cursors" {
+    {
+        const invalid = "a\xf0\x28\x8c\xbcz";
+        var cursor: usize = 1;
+        _ = utf8.lossy.decodeCursor(invalid, &cursor);
+        try testing.expectEqual(@as(usize, 2), cursor);
+        try testing.expectError(error.Utf8ExpectedContinuation, utfDiagnoseBeforeIndex(invalid, cursor));
+    }
+    {
+        const stray = "🤓\x80";
+        var cursor: usize = "🤓".len;
+        _ = utf8.lossy.decodeCursor(stray, &cursor);
+        try testing.expectEqual(stray.len, cursor);
+        try testing.expectError(error.Utf8InvalidStartByte, utfDiagnoseBeforeIndex(stray, cursor));
+    }
+
+    try utfDiagnoseBeforeIndex(mixed, 0);
+    try utfDiagnoseBeforeIndex(mixed, 1);
+}
+
+test "wtf diagnostics allow surrogate-form sequences" {
+    try wtfDiagnoseAtIndex("\xed\xa0\x80", 0);
+    try testing.expectError(error.Utf8EncodesSurrogateHalf, utfDiagnoseAtIndex("\xed\xa0\x80", 0));
+}
+
+test "wtf diagnostics report malformed input and synchronize from lossy cursors" {
+    try wtfDiagnoseAtIndex(mixed, mixed.len);
+    try testing.expectError(error.Utf8ExpectedContinuation, wtfDiagnoseAtIndex("\xf0\x28\x8c\xbc", 0));
+    try testing.expectError(error.TruncatedInput, wtfDiagnoseAtIndex("\xf0\x9f\x92", 0));
+    try testing.expectError(error.Utf8InvalidStartByte, wtfDiagnoseAtIndex("a\x80b", 1));
+
+    {
+        const invalid = "a\xf0\x28\x8c\xbcz";
+        var cursor: usize = 1;
+        _ = wtf8.lossy.decodeCursor(invalid, &cursor);
+        try testing.expectEqual(@as(usize, 2), cursor);
+        try testing.expectError(error.Utf8ExpectedContinuation, wtfDiagnoseBeforeIndex(invalid, cursor));
+    }
+    {
+        const surrogate = "a\xed\xa0\x80z";
+        var cursor: usize = 1;
+        _ = wtf8.lossy.decodeCursor(surrogate, &cursor);
+        try testing.expectEqual(@as(usize, 4), cursor);
+        try wtfDiagnoseBeforeIndex(surrogate, cursor);
+    }
+
+    try wtfDiagnoseBeforeIndex(mixed, 0);
+    try wtfDiagnoseBeforeIndex(mixed, 1);
+}
+
+test "exact iterators expose diagnoseError at the current cursor" {
+    {
+        var iter = utf8.iterator("a\xf0\x28\x8c\xbc", .exact);
+        try testing.expectEqual(@as(u21, 'a'), (try iter.nextCodepoint()).?);
+        try testing.expectError(error.Utf8ExpectedContinuation, iter.diagnoseError());
+    }
+    {
+        var iter = wtf8.iterator("a\xf0\x28\x8c\xbc", .exact);
+        try testing.expectEqual(@as(u21, 'a'), (try iter.nextCodepoint()).?);
+        try testing.expectError(error.Utf8ExpectedContinuation, iter.diagnoseError());
+    }
+}
+
+test "lossy iterators expose diagnoseError for the previous malformed subpart" {
+    {
+        var iter = utf8.iterator("a\xf0\x28\x8c\xbcz", .lossy);
+        try testing.expectEqual(@as(u21, 'a'), iter.nextCodepoint().?);
+        try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
+        try testing.expectError(error.Utf8ExpectedContinuation, iter.diagnoseError());
+    }
+    {
+        var iter = wtf8.iterator("a\xf0\x28\x8c\xbcz", .lossy);
+        try testing.expectEqual(@as(u21, 'a'), iter.nextCodepoint().?);
+        try testing.expectEqual(@as(u21, 0xfffd), iter.nextCodepoint().?);
+        try testing.expectError(error.Utf8ExpectedContinuation, iter.diagnoseError());
+    }
+    {
+        var iter = wtf8.iterator("a\xed\xa0\x80z", .lossy);
+        try testing.expectEqual(@as(u21, 'a'), iter.nextCodepoint().?);
+        try testing.expectEqual(@as(u21, 0xD800), iter.nextCodepoint().?);
+        try iter.diagnoseError();
+    }
 }
 
 test "source namespaces expose utf16 transcoding entry points" {
