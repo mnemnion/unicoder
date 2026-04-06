@@ -3,7 +3,6 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-
     const optimize = b.standardOptimizeOption(.{});
 
     const unicoder_module = b.addModule("unicoder", .{
@@ -28,6 +27,13 @@ pub fn build(b: *std.Build) void {
         .root_module = unicoder_module,
         .filters = test_filters,
     });
+    const install_docs = b.addInstallDirectory(.{
+        .source_dir = module_unit_tests.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+    const docs_step = b.step("docs", "Generate documentation");
+    docs_step.dependOn(&install_docs.step);
 
     const plan9_unit_tests = b.addTest(.{
         .root_module = plan9_module,
