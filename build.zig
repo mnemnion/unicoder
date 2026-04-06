@@ -10,6 +10,18 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const unicoder_docs = b.addLibrary(.{
+        .linkage = .static,
+        .name = "unicoder",
+        .root_module = unicoder_module,
+    });
+    const install_docs = b.addInstallDirectory(.{
+        .source_dir = unicoder_docs.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+    const docs_step = b.step("docs", "Generate documentation");
+    docs_step.dependOn(&install_docs.step);
 
     const plan9_module = b.addModule("plan9", .{
         .root_source_file = b.path("src/plan9.zig"),
@@ -27,13 +39,6 @@ pub fn build(b: *std.Build) void {
         .root_module = unicoder_module,
         .filters = test_filters,
     });
-    const install_docs = b.addInstallDirectory(.{
-        .source_dir = module_unit_tests.getEmittedDocs(),
-        .install_dir = .prefix,
-        .install_subdir = "docs",
-    });
-    const docs_step = b.step("docs", "Generate documentation");
-    docs_step.dependOn(&install_docs.step);
 
     const plan9_unit_tests = b.addTest(.{
         .root_module = plan9_module,
