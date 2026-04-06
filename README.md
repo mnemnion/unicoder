@@ -64,7 +64,7 @@ security vulnerabilities.  These expose the functions `validate` and
 `validateCursor`, which do not make such assumptions (obviously) in
 answering the question to which they are put.
 
-It is strenously recommended that users of `valid` libs create a
+It is strenuously recommended that users of `valid` libs create a
 custom `struct` type to represent known-good sequences, as a way of
 tracking provenance of already-validated slices.  Users are also advised
 that it is rare that validity is a hard prerequisite of operating on
@@ -73,6 +73,21 @@ probably-Unicode.
 Some routines in `valid` will assert validity before operations
 commence, in debug modes only.  Which of these do so is undocumented,
 and subject to change.
+
+## Endianness
+
+This library is deliberately biased toward little-endian 16 bit
+encodings.  Broadly, we consider the presence of big-endian 16 bit
+Unicode to represent a problem to be solved as early as possible.
+
+The `(u|w)tf16` libraries have a function to normalize a buffer of
+`u16`s into LE form, if they're in BE form.  Since it is impossible to
+non-heuristically check which is which, this will do the opposite if
+the opposite is, in fact, the case.
+
+Please understand that endianness in encoding contexts refers to
+"network order", and no accommodation to native endianness is made in
+terms of the `unicoder` interface.
 
 ## Performance
 

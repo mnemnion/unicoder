@@ -384,7 +384,9 @@ pub const wtf8 = struct {
     }
 };
 
-/// Operations onto, and out of, the UTF-16 encoding.
+/// Operations onto, and out of, the UTF-16 encoding.  Mostly, this expects
+/// the Le variant, which is mostly all you'll ever see.  In-place conversion
+/// from big-endian UTF-16 is made available.
 pub const utf16 = struct {
     /// Error returned when transcoding UTF-16 into UTF-8 fails.
     pub const ToUtf8Error = Utf16LeIterator.NextCodepointError || codepoint.Utf8EncodeError;
@@ -413,6 +415,11 @@ pub const utf16 = struct {
         return utf16CodeUnitSequenceLengthImpl(first_code_unit);
     }
 
+    /// Convert UTF-16BE code units to UTF-16LE in-place.
+    pub fn normalizeBe(utf16be: []u16) void {
+        normalizeUtf16Be(utf16be);
+    }
+
     /// Decode the surrogate pair beginning at `surrogate_pair[0]`.
     pub fn decodePair(surrogate_pair: []const u16) DecodePairError!u21 {
         return utf16DecodeSurrogatePairImpl(surrogate_pair);
@@ -435,7 +442,9 @@ pub const utf16 = struct {
     }
 };
 
-/// Operations onto, and out of, the WTF-16 encoding.
+/// Operations onto, and out of, the WTF-16 encoding.  Mostly, this expects
+/// the Le variant, which is mostly all you'll ever see.  In-place conversion
+/// from big-endian WTF-16 is made available.
 pub const wtf16 = struct {
     /// Error returned when invalid WTF-8 is encountered while producing WTF-16.
     pub const FromWtf8Error = error{InvalidWtf8};
@@ -459,6 +468,11 @@ pub const wtf16 = struct {
     /// Return the number of WTF-16 code units in the codepoint beginning with `first_code_unit`.
     pub fn codeUnitWidth(first_code_unit: u16) error{Utf16InvalidStartCodeUnit}!u2 {
         return utf16CodeUnitSequenceLengthImpl(first_code_unit);
+    }
+
+    /// Convert WTF-16BE code units to WTF-16LE in place.
+    pub fn normalizeBe(wtf16be: []u16) void {
+        normalizeUtf16Be(wtf16be);
     }
 
     /// Decode the surrogate pair beginning at `surrogate_pair[0]`.
@@ -1871,6 +1885,12 @@ fn utf8ToUtf16BeCursor(
     _ = try xtf8ToXtf16(false, u8dfa, st_dfa, c_mask, utf_16, utf_8, i_16, i_8);
 }
 
+fn normalizeUtf16Be(utf_16be: []u16) void {
+    for (utf_16be) |*code_unit| {
+        code_unit.* = @byteSwap(code_unit.*);
+    }
+}
+
 /// Transcode wtf_8 source into wtf_16 destination, returning the
 /// length of a slice of wtf_16 containing the transcoded points.
 /// Assumes that the destination has sufficient room for the transcoding.
@@ -2394,6 +2414,29 @@ test "utf8.toUtf16Be matches std.unicode with big-endian words" {
         try testing.expectEqual(@as(usize, 10), count);
         try expectBigEndianUtf16(&out_std, &out_unicode);
     }
+}
+
+test "utf16.normalizeBe converts big-endian words in place" {
+    var expected_native: [10]u16 = undefined;
+    var out_be: [10]u16 = undefined;
+
+    _ = try std.unicode.utf8ToUtf16Le(&expected_native, emotes);
+    const count = try utf8.toUtf16Be(&out_be, emotes);
+
+    utf16.normalizeBe(out_be[0..count]);
+    try testing.expectEqualSlices(u16, expected_native[0..count], out_be[0..count]);
+}
+
+test "wtf16.normalizeBe converts big-endian words in place" {
+    var expected_native = [_]u16{ 0xD800, 'a', 0xDC00 };
+    var out_be = [_]u16{
+        @byteSwap(@as(u16, 0xD800)),
+        @byteSwap(@as(u16, 'a')),
+        @byteSwap(@as(u16, 0xDC00)),
+    };
+
+    wtf16.normalizeBe(&out_be);
+    try testing.expectEqualSlices(u16, &expected_native, &out_be);
 }
 
 test "utf8.toUtf16LeCursor advances source and destination cursors" {
