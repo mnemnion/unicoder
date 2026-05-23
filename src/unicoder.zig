@@ -714,7 +714,7 @@ const wtf8_assume_valid = struct {
     /// In .Debug mode this also asserts that validity.
     pub fn iterator(slice: []const u8) Wtf8View {
         if (is_debug) {
-            assert(utf8.validate(slice));
+            assert(wtf8.validate(slice));
         }
         return Wtf8View.init(slice);
     }
