@@ -1464,7 +1464,7 @@ fn decodeAnyLossyXtf8Cursor(
     }
     if (st == UTF_REJECT or cursor.* == slice.len) {
         @branchHint(.cold);
-        cursor.* -= 1;
+        cursor.* -= @intFromBool(st == UTF_REJECT);
         return 0xfffd;
     }
 
@@ -1478,13 +1478,8 @@ fn decodeAnyLossyXtf8Cursor(
     }
     if (st == UTF_REJECT or cursor.* == slice.len) {
         @branchHint(.cold);
-        if (state_dfa[@intCast(cu_dfa[byte])] == UTF_REJECT) {
-            cursor.* -= 2;
-            return 0xfffd;
-        } else {
-            cursor.* -= 1;
-            return 0xfffd;
-        }
+        cursor.* -= @intFromBool(st == UTF_REJECT);
+        return 0xfffd;
     }
 
     byte = slice[cursor.*];
@@ -1494,13 +1489,8 @@ fn decodeAnyLossyXtf8Cursor(
     cursor.* += 1;
     if (st == UTF_REJECT) {
         @branchHint(.cold);
-        if (state_dfa[@intCast(cu_dfa[byte])] == UTF_REJECT) {
-            cursor.* -= 3;
-            return 0xfffd;
-        } else {
-            cursor.* -= 1;
-            return 0xfffd;
-        }
+        cursor.* -= 1;
+        return 0xfffd;
     }
     assert(st == UTF_ACCEPT);
     return @intCast(cp);
@@ -2732,6 +2722,10 @@ test "utf8.lossy surrogate-form sequences use replacement characters" {
 test "utf8.lossy truncation follows maximal subparts" {
     const bytes = "\xe1\x80\xe2\xf0\x91\x92\xf1\xbf\x41";
     try expectUtf8LossyDecode(bytes, &.{ 0xfffd, 0xfffd, 0xfffd, 0xfffd, 0x41 }, &.{ 2, 1, 3, 2, 1 });
+    try expectUtf8LossyDecode("\xe1\x80", &.{0xfffd}, &.{2});
+    try expectUtf8LossyDecode("\xf1\x80\x80", &.{0xfffd}, &.{3});
+    try expectUtf8LossyDecode("\xe1\x80\xc0", &.{ 0xfffd, 0xfffd }, &.{ 2, 1 });
+    try expectUtf8LossyDecode("\xf1\x80\x80\xc0", &.{ 0xfffd, 0xfffd }, &.{ 3, 1 });
 }
 
 test "utf8.lossy countCodepoints counts replacements" {
@@ -2826,6 +2820,10 @@ test "utf8.lossy iterator convenience function is specialized to lossy" {
 test "wtf8.lossy preserves valid input and replaces malformed input" {
     try testing.expectEqual(@as(u21, 0x03B1), wtf8.lossy.decode("α"));
     try expectWtf8LossyDecode("\xc0\xaf", &.{ 0xfffd, 0xfffd }, &.{ 1, 1 });
+    try expectWtf8LossyDecode("\xe1\x80", &.{0xfffd}, &.{2});
+    try expectWtf8LossyDecode("\xf1\x80\x80", &.{0xfffd}, &.{3});
+    try expectWtf8LossyDecode("\xe1\x80\xc0", &.{ 0xfffd, 0xfffd }, &.{ 2, 1 });
+    try expectWtf8LossyDecode("\xf1\x80\x80\xc0", &.{ 0xfffd, 0xfffd }, &.{ 3, 1 });
 }
 
 test "wtf8.lossy countCodepoints and transcode replace malformed input" {
