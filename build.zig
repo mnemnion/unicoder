@@ -5,6 +5,12 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const dfa_module = b.addModule("dfa", .{
+        .root_source_file = b.path("src/dfa.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const unicoder_module = b.addModule("unicoder", .{
         .root_source_file = b.path("src/unicoder.zig"),
         .target = target,
@@ -40,17 +46,24 @@ pub fn build(b: *std.Build) void {
         .filters = test_filters,
     });
 
+    const dfa_unit_tests = b.addTest(.{
+        .root_module = dfa_module,
+        .filters = test_filters,
+    });
+
     const plan9_unit_tests = b.addTest(.{
         .root_module = plan9_module,
         .filters = test_filters,
     });
 
     const run_module_unit_tests = b.addRunArtifact(module_unit_tests);
+    const run_dfa_unit_tests = b.addRunArtifact(dfa_unit_tests);
     const run_plan9_unit_tests = b.addRunArtifact(plan9_unit_tests);
 
     const test_step = b.step("test", "Run unit tests");
 
     test_step.dependOn(&run_module_unit_tests.step);
+    test_step.dependOn(&run_dfa_unit_tests.step);
     test_step.dependOn(&run_plan9_unit_tests.step);
 
     const run_kcov = b.addSystemCommand(&.{

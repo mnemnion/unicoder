@@ -4,53 +4,9 @@
 //! six-byte UTF-8 form.  It accepts surrogate-form three-byte sequences, but
 //! it still rejects all non-shortest encodings.
 
-// zig fmt: off
-
-const byte_class: [256]u8 = .{
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 ,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0,0, // 00..1f
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 ,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0,0, // 20..3f
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 ,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0,0, // 40..5f
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 ,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0,0, // 60..7f
-    1,1,1,1,2,2,2,2,3,3,3,3,3,3,3,3 ,4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,4,4, // 80..9f
-    5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5 ,5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,5,5, // a0..bf
-    7,7,6,6,6,6,6,6,6,6,6,6,6,6,6,6 ,6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,6,6, // c0..df
-    9,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,11,10,10,10,10,10,10,10,13,12,12,12,15,14,7,7, // e0..ff
-};
-
-const class_mask: [16]u8 = .{
-    0xff,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0b0001_1111,
-    0,
-    0b0000_1111,
-    0b0000_1111,
-    0b0000_0111,
-    0b0000_0111,
-    0b0000_0011,
-    0b0000_0011,
-    0b0000_0001,
-    0b0000_0001,
-};
-
-const state_dfa: [176]u8 = .{
-    0,1,1,1,1,1,2,1,3,7,4,8,5,9,6,10,
-    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-    1,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,
-    1,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,
-    1,3,3,3,3,3,1,1,1,1,1,1,1,1,1,1,
-    1,4,4,4,4,4,1,1,1,1,1,1,1,1,1,1,
-    1,5,5,5,5,5,1,1,1,1,1,1,1,1,1,1,
-    1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,
-    1,1,1,1,3,3,1,1,1,1,1,1,1,1,1,1,
-    1,1,1,4,4,4,1,1,1,1,1,1,1,1,1,1,
-    1,1,5,5,5,5,1,1,1,1,1,1,1,1,1,1,
-};
-
-// zig fmt: on
+const byte_class = dfa.plan9.dfa;
+const class_mask = dfa.plan9.mask;
+const state_dfa = dfa.plan9.state;
 
 pub const Error = error{InvalidUtf8};
 
@@ -60,8 +16,8 @@ pub const ErrorStrategy = enum {
     assume_valid,
 };
 
-pub const UTF_ACCEPT = 0;
-pub const UTF_REJECT = 1;
+pub const UTF_ACCEPT = dfa.plan9.accept;
+pub const UTF_REJECT = dfa.plan9.reject;
 
 const weight: [4]u8 = .{ 1, 1, 0, 1 };
 const utf8_uffd = [3]u8{ 0xEF, 0xBF, 0xBD };
@@ -121,7 +77,7 @@ pub fn decodeCursor(bytes: []const u8, cursor: *usize) Error!u32 {
 
     byte = bytes[cursor.*];
     class = byte_class[byte];
-    state = state_dfa[state * 16 + class];
+    state = state_dfa[state + class];
     codepoint = (byte & 0x3f) | (codepoint << 6);
     if (state == UTF_REJECT) return error.InvalidUtf8;
     cursor.* += 1;
@@ -129,7 +85,7 @@ pub fn decodeCursor(bytes: []const u8, cursor: *usize) Error!u32 {
 
     byte = bytes[cursor.*];
     class = byte_class[byte];
-    state = state_dfa[state * 16 + class];
+    state = state_dfa[state + class];
     codepoint = (byte & 0x3f) | (codepoint << 6);
     if (state == UTF_REJECT) return error.InvalidUtf8;
     cursor.* += 1;
@@ -137,7 +93,7 @@ pub fn decodeCursor(bytes: []const u8, cursor: *usize) Error!u32 {
 
     byte = bytes[cursor.*];
     class = byte_class[byte];
-    state = state_dfa[state * 16 + class];
+    state = state_dfa[state + class];
     codepoint = (byte & 0x3f) | (codepoint << 6);
     if (state == UTF_REJECT) return error.InvalidUtf8;
     cursor.* += 1;
@@ -145,7 +101,7 @@ pub fn decodeCursor(bytes: []const u8, cursor: *usize) Error!u32 {
 
     byte = bytes[cursor.*];
     class = byte_class[byte];
-    state = state_dfa[state * 16 + class];
+    state = state_dfa[state + class];
     codepoint = (byte & 0x3f) | (codepoint << 6);
     if (state == UTF_REJECT) return error.InvalidUtf8;
     cursor.* += 1;
@@ -153,7 +109,7 @@ pub fn decodeCursor(bytes: []const u8, cursor: *usize) Error!u32 {
 
     byte = bytes[cursor.*];
     class = byte_class[byte];
-    state = state_dfa[state * 16 + class];
+    state = state_dfa[state + class];
     codepoint = (byte & 0x3f) | (codepoint << 6);
     if (state != UTF_ACCEPT) return error.InvalidUtf8;
     cursor.* += 1;
@@ -188,27 +144,27 @@ pub fn validateCursor(bytes: []const u8, cursor: *usize) bool {
         }
 
         cursor.* += 1;
-        state = state_dfa[state * 16 + byte_class[bytes[cursor.*]]];
+        state = state_dfa[state + byte_class[bytes[cursor.*]]];
         if (state == UTF_ACCEPT) continue;
         if (state == UTF_REJECT) return false;
 
         cursor.* += 1;
-        state = state_dfa[state * 16 + byte_class[bytes[cursor.*]]];
+        state = state_dfa[state + byte_class[bytes[cursor.*]]];
         if (state == UTF_ACCEPT) continue;
         if (state == UTF_REJECT) return false;
 
         cursor.* += 1;
-        state = state_dfa[state * 16 + byte_class[bytes[cursor.*]]];
+        state = state_dfa[state + byte_class[bytes[cursor.*]]];
         if (state == UTF_ACCEPT) continue;
         if (state == UTF_REJECT) return false;
 
         cursor.* += 1;
-        state = state_dfa[state * 16 + byte_class[bytes[cursor.*]]];
+        state = state_dfa[state + byte_class[bytes[cursor.*]]];
         if (state == UTF_ACCEPT) continue;
         if (state == UTF_REJECT) return false;
 
         cursor.* += 1;
-        state = state_dfa[state * 16 + byte_class[bytes[cursor.*]]];
+        state = state_dfa[state + byte_class[bytes[cursor.*]]];
         if (state == UTF_REJECT) return false;
     }
 
@@ -242,27 +198,27 @@ pub fn countCodepoints(bytes: []const u8) Error!usize {
         }
 
         i += 1;
-        state = state_dfa[state * 16 + byte_class[bytes[i]]];
+        state = state_dfa[state + byte_class[bytes[i]]];
         if (state == UTF_ACCEPT) continue;
         if (state == UTF_REJECT) return error.InvalidUtf8;
 
         i += 1;
-        state = state_dfa[state * 16 + byte_class[bytes[i]]];
+        state = state_dfa[state + byte_class[bytes[i]]];
         if (state == UTF_ACCEPT) continue;
         if (state == UTF_REJECT) return error.InvalidUtf8;
 
         i += 1;
-        state = state_dfa[state * 16 + byte_class[bytes[i]]];
+        state = state_dfa[state + byte_class[bytes[i]]];
         if (state == UTF_ACCEPT) continue;
         if (state == UTF_REJECT) return error.InvalidUtf8;
 
         i += 1;
-        state = state_dfa[state * 16 + byte_class[bytes[i]]];
+        state = state_dfa[state + byte_class[bytes[i]]];
         if (state == UTF_ACCEPT) continue;
         if (state == UTF_REJECT) return error.InvalidUtf8;
 
         i += 1;
-        state = state_dfa[state * 16 + byte_class[bytes[i]]];
+        state = state_dfa[state + byte_class[bytes[i]]];
         if (state == UTF_REJECT) return error.InvalidUtf8;
     }
 
@@ -298,7 +254,7 @@ pub const lossy = struct {
         var codepoint: u32 = byte & class_mask[class];
         byte = bytes[cursor.*];
         class = byte_class[byte];
-        state = state_dfa[state * 16 + class];
+        state = state_dfa[state + class];
         codepoint = (byte & 0x3f) | (codepoint << 6);
         cursor.* += 1;
         if (state == UTF_ACCEPT) return codepoint;
@@ -310,7 +266,7 @@ pub const lossy = struct {
 
         byte = bytes[cursor.*];
         class = byte_class[byte];
-        state = state_dfa[state * 16 + class];
+        state = state_dfa[state + class];
         codepoint = (byte & 0x3f) | (codepoint << 6);
         cursor.* += 1;
         if (state == UTF_ACCEPT) return codepoint;
@@ -322,7 +278,7 @@ pub const lossy = struct {
 
         byte = bytes[cursor.*];
         class = byte_class[byte];
-        state = state_dfa[state * 16 + class];
+        state = state_dfa[state + class];
         codepoint = (byte & 0x3f) | (codepoint << 6);
         cursor.* += 1;
         if (state == UTF_ACCEPT) return codepoint;
@@ -334,7 +290,7 @@ pub const lossy = struct {
 
         byte = bytes[cursor.*];
         class = byte_class[byte];
-        state = state_dfa[state * 16 + class];
+        state = state_dfa[state + class];
         codepoint = (byte & 0x3f) | (codepoint << 6);
         cursor.* += 1;
         if (state == UTF_ACCEPT) return codepoint;
@@ -346,7 +302,7 @@ pub const lossy = struct {
 
         byte = bytes[cursor.*];
         class = byte_class[byte];
-        state = state_dfa[state * 16 + class];
+        state = state_dfa[state + class];
         codepoint = (byte & 0x3f) | (codepoint << 6);
         cursor.* += 1;
         if (state == UTF_REJECT) {
@@ -395,28 +351,28 @@ pub const valid = struct {
 
         byte = bytes[cursor.*];
         class = byte_class[byte];
-        state = state_dfa[state * 16 + class];
+        state = state_dfa[state + class];
         codepoint = (byte & 0x3f) | (codepoint << 6);
         cursor.* += 1;
         if (state == UTF_ACCEPT) return codepoint;
 
         byte = bytes[cursor.*];
         class = byte_class[byte];
-        state = state_dfa[state * 16 + class];
+        state = state_dfa[state + class];
         codepoint = (byte & 0x3f) | (codepoint << 6);
         cursor.* += 1;
         if (state == UTF_ACCEPT) return codepoint;
 
         byte = bytes[cursor.*];
         class = byte_class[byte];
-        state = state_dfa[state * 16 + class];
+        state = state_dfa[state + class];
         codepoint = (byte & 0x3f) | (codepoint << 6);
         cursor.* += 1;
         if (state == UTF_ACCEPT) return codepoint;
 
         byte = bytes[cursor.*];
         class = byte_class[byte];
-        state = state_dfa[state * 16 + class];
+        state = state_dfa[state + class];
         codepoint = (byte & 0x3f) | (codepoint << 6);
         cursor.* += 1;
         if (state == UTF_ACCEPT) return codepoint;
@@ -779,3 +735,4 @@ fn expectRejectNonShortest(bytes: []const u8, reject_at: usize) !void {
 const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
+const dfa = @import("dfa.zig");

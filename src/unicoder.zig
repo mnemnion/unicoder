@@ -10,69 +10,12 @@
 //! `valid` assumes you know what you're doing and does the fastest possible
 //! thing which will give the correct result if you actually do.
 
-// zig fmt: off
-
-/// Byte transitions: value to class
-const u8dfa: [256]u8 = .{
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 00..1f
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 20..3f
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 40..5f
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 60..7f
-1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9, // 80..9f
-7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7, // a0..bf
-8,8,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, // c0..df
-0xa,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x4,0x3,0x3, // e0..ef
-0xb,0x6,0x6,0x6,0x5,0x8,0x8,0x8,0x8,0x8,0x8,0x8,0x8,0x8,0x8,0x8, // f0..ff
-};
-
-const w8dfa: [256]u8 = .{
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 00..1f
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 20..3f
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 40..5f
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 60..7f
-1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9, // 80..9f
-7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7, // a0..bf
-8,8,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, // c0..df
-0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3, // e0..ef
-0xb,0x6,0x6,0x6,0x5,0x8,0x8,0x8,0x8,0x8,0x8,0x8,0x8,0x8,0x8,0x8, // f0..ff
-};
-
-/// State transition: state + class = new state
-const st_dfa: [108]u8 = .{
- 0,12,24,36,60,96,84,12,12,12,48,72,
-12,12,12,12,12,12,12,12,12,12,12,12,
-12, 0,12,12,12,12,12, 0,12, 0,12,12,
-12,24,12,12,12,12,12,24,12,24,12,12,
-12,12,12,12,12,12,12,24,12,12,12,12,
-12,24,12,12,12,12,12,12,12,24,12,12,
-12,12,12,12,12,12,12,36,12,36,12,12,
-12,36,12,12,12,12,12,36,12,36,12,12,
-12,36,12,12,12,12,12,12,12,12,12,12,
-};
-
-/// State masks
-const c_mask: [12]u8 = .{
-    0xff,
-    0,
-    0b0011_1111,
-    0b0001_1111,
-    0b0000_1111,
-    0b0000_0111,
-    0b0000_0011,
-    0,
-    0,
-    0,
-    0,
-    0,
-};
-
-// zig fmt: on
-
-/// Successful codepoint parse
-const UTF_ACCEPT = 0;
-
-/// Error state
-const UTF_REJECT = 12;
+const u8dfa = dfa.utf8.dfa;
+const w8dfa = dfa.wtf8.dfa;
+const st_dfa = dfa.utf8.state;
+const c_mask = dfa.utf8.mask;
+const UTF_ACCEPT = dfa.utf8.accept;
+const UTF_REJECT = dfa.utf8.reject;
 
 const utf8_uffd = [3]u8{ 0xEF, 0xBF, 0xBD };
 
@@ -1521,7 +1464,7 @@ fn decodeAnyLossyXtf8Cursor(
     }
     if (st == UTF_REJECT or cursor.* == slice.len) {
         @branchHint(.cold);
-        cursor.* -= 1;
+        cursor.* -= @intFromBool(st == UTF_REJECT);
         return 0xfffd;
     }
 
@@ -1535,13 +1478,8 @@ fn decodeAnyLossyXtf8Cursor(
     }
     if (st == UTF_REJECT or cursor.* == slice.len) {
         @branchHint(.cold);
-        if (state_dfa[@intCast(cu_dfa[byte])] == UTF_REJECT) {
-            cursor.* -= 2;
-            return 0xfffd;
-        } else {
-            cursor.* -= 1;
-            return 0xfffd;
-        }
+        cursor.* -= @intFromBool(st == UTF_REJECT);
+        return 0xfffd;
     }
 
     byte = slice[cursor.*];
@@ -1551,13 +1489,8 @@ fn decodeAnyLossyXtf8Cursor(
     cursor.* += 1;
     if (st == UTF_REJECT) {
         @branchHint(.cold);
-        if (state_dfa[@intCast(cu_dfa[byte])] == UTF_REJECT) {
-            cursor.* -= 3;
-            return 0xfffd;
-        } else {
-            cursor.* -= 1;
-            return 0xfffd;
-        }
+        cursor.* -= 1;
+        return 0xfffd;
     }
     assert(st == UTF_ACCEPT);
     return @intCast(cp);
@@ -2789,6 +2722,10 @@ test "utf8.lossy surrogate-form sequences use replacement characters" {
 test "utf8.lossy truncation follows maximal subparts" {
     const bytes = "\xe1\x80\xe2\xf0\x91\x92\xf1\xbf\x41";
     try expectUtf8LossyDecode(bytes, &.{ 0xfffd, 0xfffd, 0xfffd, 0xfffd, 0x41 }, &.{ 2, 1, 3, 2, 1 });
+    try expectUtf8LossyDecode("\xe1\x80", &.{0xfffd}, &.{2});
+    try expectUtf8LossyDecode("\xf1\x80\x80", &.{0xfffd}, &.{3});
+    try expectUtf8LossyDecode("\xe1\x80\xc0", &.{ 0xfffd, 0xfffd }, &.{ 2, 1 });
+    try expectUtf8LossyDecode("\xf1\x80\x80\xc0", &.{ 0xfffd, 0xfffd }, &.{ 3, 1 });
 }
 
 test "utf8.lossy countCodepoints counts replacements" {
@@ -2883,6 +2820,10 @@ test "utf8.lossy iterator convenience function is specialized to lossy" {
 test "wtf8.lossy preserves valid input and replaces malformed input" {
     try testing.expectEqual(@as(u21, 0x03B1), wtf8.lossy.decode("α"));
     try expectWtf8LossyDecode("\xc0\xaf", &.{ 0xfffd, 0xfffd }, &.{ 1, 1 });
+    try expectWtf8LossyDecode("\xe1\x80", &.{0xfffd}, &.{2});
+    try expectWtf8LossyDecode("\xf1\x80\x80", &.{0xfffd}, &.{3});
+    try expectWtf8LossyDecode("\xe1\x80\xc0", &.{ 0xfffd, 0xfffd }, &.{ 2, 1 });
+    try expectWtf8LossyDecode("\xf1\x80\x80\xc0", &.{ 0xfffd, 0xfffd }, &.{ 3, 1 });
 }
 
 test "wtf8.lossy countCodepoints and transcode replace malformed input" {
@@ -3067,3 +3008,4 @@ const assert = std.debug.assert;
 const testing = std.testing;
 const builtin = @import("builtin");
 const is_debug = builtin.mode == .Debug;
+const dfa = @import("dfa.zig");
