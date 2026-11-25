@@ -584,7 +584,7 @@ const utf8_assume_valid = struct {
     pub const ErrorStrategy = utf8.ErrorStrategy;
 
     /// Wrap a byte slice as a UTF-8 view assuming valid UTF-8 input.
-    /// In .Debug modes, it will also assert this property.
+    /// In .debug modes, it will also assert this property.
     pub fn iterator(slice: []const u8) Utf8View {
         if (is_debug) {
             assert(utf8.validate(slice));
@@ -654,7 +654,7 @@ const wtf8_assume_valid = struct {
     pub const ErrorStrategy = wtf8.ErrorStrategy;
 
     /// Wrap a byte slice as a WTF-8 view assuming valid WTF-8 input.
-    /// In .Debug mode this also asserts that validity.
+    /// In .debug mode this also asserts that validity.
     pub fn iterator(slice: []const u8) Wtf8View {
         if (is_debug) {
             assert(wtf8.validate(slice));
@@ -1360,12 +1360,15 @@ fn decodeAnyXtf8Cursor(
     i.* += 1;
     switch (class) {
         2, 12 => if (i.* + 1 > slice.len) {
+            @branchHint(.cold);
             return error.InvalidUtf8;
         },
         10, 3, 4 => if (i.* + 2 > slice.len) {
+            @branchHint(.cold);
             return error.InvalidUtf8;
         },
         11, 6, 5 => if (i.* + 3 > slice.len) {
+            @branchHint(.cold);
             return error.InvalidUtf8;
         }, // Remaining states are ACCEPT or produce REJECT here
         else => unreachable,
@@ -1375,7 +1378,10 @@ fn decodeAnyXtf8Cursor(
     class = @intCast(cu_dfa[byte]);
     st = state_dfa[st + class];
     cp = (byte & 0x3f) | (cp << 6);
-    if (st == UTF_REJECT) return error.InvalidUtf8;
+    if (st == UTF_REJECT) {
+        @branchHint(.cold);
+        return error.InvalidUtf8;
+    }
     i.* += 1;
     if (st == UTF_ACCEPT) return @intCast(cp);
     // Byte 3
@@ -1383,7 +1389,10 @@ fn decodeAnyXtf8Cursor(
     class = @intCast(cu_dfa[byte]);
     st = state_dfa[st + class];
     cp = (byte & 0x3f) | (cp << 6);
-    if (st == UTF_REJECT) return error.InvalidUtf8;
+    if (st == UTF_REJECT) {
+        @branchHint(.cold);
+        return error.InvalidUtf8;
+    }
     i.* += 1;
     if (st == UTF_ACCEPT) return @intCast(cp);
     // Byte 4
@@ -1391,7 +1400,10 @@ fn decodeAnyXtf8Cursor(
     class = @intCast(cu_dfa[byte]);
     st = state_dfa[st + class];
     cp = (byte & 0x3f) | (cp << 6);
-    if (st != UTF_ACCEPT) return error.InvalidUtf8;
+    if (st != UTF_ACCEPT) {
+        @branchHint(.cold);
+        return error.InvalidUtf8;
+    }
     i.* += 1;
     return @intCast(cp);
 }
@@ -3007,5 +3019,5 @@ const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
 const builtin = @import("builtin");
-const is_debug = builtin.mode == .Debug;
+const is_debug = builtin.mode == .debug;
 const dfa = @import("dfa.zig");
